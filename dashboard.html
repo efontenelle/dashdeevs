@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Time — Developer Dashboard</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header class="topbar"></header>
+<main>
+  <h1>Visão do time</h1>
+
+  <div class="filters">
+    <div class="field">
+      <label>Período</label>
+      <div class="pill-group" id="period-group">
+        <button data-days="7">7 dias</button>
+        <button data-days="30" class="active">30 dias</button>
+        <button data-days="90">90 dias</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="team-select">Time</label>
+      <select id="team-select"><option value="">Padrão</option></select>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="refresh-btn">Recarregar</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="clear-cache-btn">Limpar cache</button>
+    </div>
+  </div>
+
+  <div id="global-status"></div>
+
+  <div class="grid grid-4" id="kpi-row"></div>
+
+  <div class="grid grid-2" style="margin-top: 16px;">
+    <div class="card">
+      <div class="card-header"><h2>Commits por dia</h2></div>
+      <div class="chart-wrap"><canvas id="chart-commits"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Status das PRs</h2></div>
+      <div class="chart-wrap"><canvas id="chart-prs"></canvas></div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top: 16px;">
+    <div class="card">
+      <div class="card-header"><h2>Velocity (story points por sprint)</h2></div>
+      <div class="chart-wrap"><canvas id="chart-velocity"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Burnup acumulado</h2></div>
+      <div class="chart-wrap"><canvas id="chart-burnup"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>Cycle time (dias)</h2></div>
+    <div class="chart-wrap tall"><canvas id="chart-cycletime"></canvas></div>
+  </div>
+
+  <div class="grid grid-3" style="margin-top: 16px;">
+    <div class="card">
+      <div class="card-header"><h2>Work items por tipo</h2></div>
+      <div class="chart-wrap"><canvas id="chart-wi-type"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Work items por estado</h2></div>
+      <div class="chart-wrap"><canvas id="chart-wi-state"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Backlog health</h2></div>
+      <div id="backlog-health"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>Ranking — commits &amp; PRs por autor</h2></div>
+    <div id="author-table"></div>
+  </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>Revisões de código</h2></div>
+    <div id="reviews-table"></div>
+    <p class="muted" style="margin-top: 8px;">Comentários feitos/recebidos analisados nas PRs mais recentes do período.</p>
+  </div>
+</main>
+
+<script type="module">
+  import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError } from './js/ui.js'
+  import { clearCache } from './js/cache.js'
+  import { createChart, PALETTE } from './js/charts.js'
+  import { listTeams } from './js/api.js'
+  import {
+    loadCommitsAllRepos, loadPullRequests,
+    commitsOverTime, prsByAuthor, prStatusSummary, commitsByAuthor
+  } from './js/modules/commits.js'
+  import { computeVelocity, burndownData } from './js/modules/velocity.js'
+  import { loadCompletedWorkItems, computeCycleTime, scatterPoints, trendLine, cycleTimeByType } from './js/modules/cycletime.js'
+  import { loadActiveWorkItems, distributionByType, distributionByState, backlogHealth } from './js/modules/workitems.js'
+  import { loadReviews, reviewStatsByReviewer, computeCommentStats } from './js/modules/reviews.js'
+
+  renderTopbar('dashboard')
+  if (!requireConfigOrRedirect()) throw new Error('redirecting')
+
+  const state = { days: 30, team: '' }
+
+  const periodGroup = document.getElementById('period-group')
+  periodGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-days]')
+    if (!btn) return
+    periodGroup.querySelectorAll('button').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    state.days = Number(btn.dataset.days)
+    loadAll()
+  })
+
+  document.getElementById('refresh-btn').addEventListener('click', () => {
+    clearCache()
+    loadAll()
+  })
+  document.getElementById('clear-cache-btn').addEventListener('click', () => {
+    clearCache()
+    alert('Cache limpo.')
+  })
+
+  const teamSelect = document.getElementById('team-select')
+  teamSelect.addEventListener('change', () => {
+    state.team = teamSelect.value
+    loadAll()
+  })
+
+  async function populateTeams() {
+    try {
+      const teams = await listTeams()
+      for (const t of teams) {
+        const opt = document.createElement('option')
+        opt.value = t.name
+        opt.textContent = t.name
+        teamSelect.appendChild(opt)
+      }
+    } catch (e) {
+      console.warn('Não foi possível listar times:', e.message)
+    }
+  }
+
+  function renderKpis({ commits, prs, velocity, cycle, activeItems }) {
+    const avgCycle = cycle.length
+      ? (cycle.reduce((s, r) => s + r.cycle, 0) / cycle.length).toFixed(1)
+      : '—'
+    const lastSprint = velocity[velocity.length - 1]
+    const el = document.getElementById('kpi-row')
+    el.innerHTML = `
+      <div class="card stat"><div class="label">Commits (${state.days}d)</div><div class="value">${commits.length}</div></div>
+      <div class="card stat"><div class="label">PRs (${state.days}d)</div><div class="value">${prs.length}</div></div>
+      <div class="card stat"><div class="label">Cycle time médio</div><div class="value">${avgCycle}<span style="font-size:14px"> dias</span></div></div>
+      <div class="card stat"><div class="label">Última sprint</div><div class="value">${lastSprint ? lastSprint.pointsDone + '/' + lastSprint.points : '—'}<span style="font-size:14px"> SP</span></div><div class="sub">${lastSprint?.sprint ?? ''}</div></div>
+    `
+  }
+
+  function renderCommitsChart(commits) {
+    const buckets = commitsOverTime(commits, state.days)
+    const labels = [...buckets.keys()]
+    const values = [...buckets.values()]
+    createChart(document.getElementById('chart-commits'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{ label: 'Commits', data: values, borderColor: PALETTE[0], backgroundColor: PALETTE[0] + '22', fill: true, tension: 0.25 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, scales: { x: { ticks: { maxTicksLimit: 10 } } } }
+    })
+  }
+
+  function renderPrChart(prs) {
+    const s = prStatusSummary(prs)
+    createChart(document.getElementById('chart-prs'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Ativas', 'Concluídas', 'Abandonadas'],
+        datasets: [{ data: [s.active, s.completed, s.abandoned], backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[3]] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    })
+  }
+
+  function renderVelocityChart(rows) {
+    createChart(document.getElementById('chart-velocity'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.sprint),
+        datasets: [
+          { label: 'SP entregues', data: rows.map(r => r.pointsDone), backgroundColor: PALETTE[1] },
+          { label: 'SP planejados', data: rows.map(r => r.points), backgroundColor: PALETTE[0] },
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    })
+  }
+
+  function renderBurnupChart(rows) {
+    const b = burndownData(rows)
+    createChart(document.getElementById('chart-burnup'), {
+      type: 'line',
+      data: {
+        labels: b.labels,
+        datasets: [
+          { label: 'Planejado (acum.)', data: b.planned, borderColor: PALETTE[0], backgroundColor: 'transparent' },
+          { label: 'Entregue (acum.)', data: b.done, borderColor: PALETTE[1], backgroundColor: 'transparent' },
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    })
+  }
+
+  function renderCycleTimeChart(rows) {
+    const points = scatterPoints(rows)
+    const trend = trendLine(rows)
+    const datasets = [{
+      type: 'scatter',
+      label: 'Work items',
+      data: points,
+      parsing: false,
+      backgroundColor: PALETTE[0] + 'cc',
+      pointRadius: 4,
+    }]
+    if (trend) {
+      datasets.push({
+        type: 'line',
+        label: 'Tendência',
+        data: trend,
+        parsing: false,
+        borderColor: PALETTE[3],
+        backgroundColor: 'transparent',
+        pointRadius: 0,
+        borderWidth: 2,
+      })
+    }
+    createChart(document.getElementById('chart-cycletime'), {
+      data: { datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { type: 'time', time: { unit: 'day' }, title: { display: true, text: 'Concluído em' } },
+          y: { title: { display: true, text: 'Cycle time (dias)' }, beginAtZero: true }
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const p = ctx.raw
+                if (!p.title) return `${p.y.toFixed(1)} dias`
+                return `#${p.id} ${p.type}: ${p.y.toFixed(1)} dias`
+              }
+            }
+          }
+        }
+      }
+    })
+  }
+
+  function renderWiTypeChart(rows) {
+    createChart(document.getElementById('chart-wi-type'), {
+      type: 'pie',
+      data: {
+        labels: rows.map(r => r.type),
+        datasets: [{ data: rows.map(r => r.count), backgroundColor: PALETTE }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    })
+  }
+
+  function renderWiStateChart(rows) {
+    createChart(document.getElementById('chart-wi-state'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.state),
+        datasets: [{ data: rows.map(r => r.count), backgroundColor: PALETTE[2] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, indexAxis: 'y' }
+    })
+  }
+
+  function renderBacklogHealth(h) {
+    document.getElementById('backlog-health').innerHTML = `
+      <div class="stat" style="margin-bottom: 12px;">
+        <div class="label">Items abertos</div>
+        <div class="value">${h.total}</div>
+      </div>
+      <div style="display:flex; gap: 10px; flex-wrap: wrap;">
+        <span class="badge warning">Sem estimativa: ${h.noEstimate} (${h.noEstimatePct}%)</span>
+        <span class="badge danger">Sem responsável: ${h.noAssignee} (${h.noAssigneePct}%)</span>
+      </div>
+    `
+  }
+
+  function renderAuthorTable(commits, prs) {
+    const cb = new Map(commitsByAuthor(commits).map(r => [r.author, r.count]))
+    const prRows = prsByAuthor(prs)
+    const rows = prRows.map(r => ({
+      ...r,
+      commits: cb.get(r.author) || 0,
+    }))
+    for (const [author, count] of cb) {
+      if (!rows.find(r => r.author === author)) {
+        rows.push({ author, commits: count, open: 0, completed: 0, abandoned: 0, total: 0, approvalRate: 0 })
+      }
+    }
+    rows.sort((a, b) => (b.commits + b.total) - (a.commits + a.total))
+    const body = rows.slice(0, 20).map(r => `
+      <tr>
+        <td>${escapeHtml(r.author)}</td>
+        <td>${r.commits}</td>
+        <td>${r.open}</td>
+        <td>${r.completed}</td>
+        <td>${r.abandoned}</td>
+        <td>${r.total ? (r.approvalRate * 100).toFixed(0) + '%' : '—'}</td>
+      </tr>`).join('')
+    document.getElementById('author-table').innerHTML = `
+      <table>
+        <thead><tr><th>Autor</th><th>Commits</th><th>PRs ativas</th><th>PRs concluídas</th><th>PRs abandonadas</th><th>Taxa de aprovação</th></tr></thead>
+        <tbody>${body || '<tr><td colspan="6" class="muted">Sem dados no período.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  function renderReviewsTable(stats, comments) {
+    const byName = new Map(comments.map(c => [c.person, c]))
+    const body = stats.slice(0, 20).map(r => {
+      const c = byName.get(r.reviewer) || { made: 0, received: 0, avgResponseHours: null }
+      return `
+        <tr>
+          <td>${escapeHtml(r.reviewer)}</td>
+          <td>${r.reviews}</td>
+          <td>${r.approved}</td>
+          <td>${r.rejected}</td>
+          <td>${c.made}</td>
+          <td>${c.received}</td>
+          <td>${c.avgResponseHours != null ? c.avgResponseHours.toFixed(1) + 'h' : '—'}</td>
+        </tr>`
+    }).join('')
+    document.getElementById('reviews-table').innerHTML = `
+      <table>
+        <thead><tr><th>Revisor</th><th>Reviews</th><th>Aprovou</th><th>Rejeitou</th><th>Comentários feitos</th><th>Recebidos (como autor)</th><th>Resposta média</th></tr></thead>
+        <tbody>${body || '<tr><td colspan="7" class="muted">Sem dados no período.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  async function loadAll() {
+    const status = document.getElementById('global-status')
+    status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
+    try {
+      const [commits, prs, velocity, cycleItems, activeItems] = await Promise.all([
+        loadCommitsAllRepos({ days: state.days }),
+        loadPullRequests({ days: state.days }),
+        computeVelocity({ team: state.team || undefined, limit: 6 }).catch(e => { console.warn(e); return [] }),
+        loadCompletedWorkItems({ days: Math.max(state.days, 60), team: state.team || undefined }).catch(e => { console.warn(e); return [] }),
+        loadActiveWorkItems({ days: state.days, team: state.team || undefined }).catch(e => { console.warn(e); return [] }),
+      ])
+
+      const cycleRows = computeCycleTime(cycleItems)
+
+      renderKpis({ commits, prs, velocity, cycle: cycleRows, activeItems })
+      renderCommitsChart(commits)
+      renderPrChart(prs)
+      renderVelocityChart(velocity)
+      renderBurnupChart(velocity)
+      renderCycleTimeChart(cycleRows)
+      renderWiTypeChart(distributionByType(activeItems))
+      renderWiStateChart(distributionByState(activeItems))
+      renderBacklogHealth(backlogHealth(activeItems))
+      renderAuthorTable(commits, prs)
+
+      const reviewPrs = await loadReviews({ days: state.days })
+      const reviewStats = reviewStatsByReviewer(reviewPrs)
+      const commentStats = await computeCommentStats(reviewPrs, { maxPrs: 30 })
+      renderReviewsTable(reviewStats, commentStats)
+
+      status.innerHTML = ''
+    } catch (e) {
+      console.error(e)
+      showError('global-status', `Erro ao carregar dados: ${e.message}`)
+    }
+  }
+
+  // Load Chart.js date adapter for time scale
+  const adapter = document.createElement('script')
+  adapter.src = 'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js'
+  adapter.onload = async () => {
+    await populateTeams()
+    loadAll()
+  }
+  document.head.appendChild(adapter)
+</script>
+</body>
+</html>

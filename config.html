@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuração — Developer Dashboard</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+<header class="topbar"></header>
+<main>
+  <h1>Configuração</h1>
+  <p class="muted">Informe suas credenciais do Azure DevOps. Tudo é salvo localmente no seu navegador (<code>localStorage</code>) e nunca é enviado para outro servidor.</p>
+
+  <div class="card" style="max-width: 640px;">
+    <form id="config-form" autocomplete="off">
+      <div class="form-row">
+        <label for="org">Organização</label>
+        <input type="text" id="org" name="org" placeholder="minha-empresa" required>
+        <small class="muted">Exemplo: para <code>https://dev.azure.com/minha-empresa</code>, use <code>minha-empresa</code>.</small>
+      </div>
+
+      <div class="form-row">
+        <label for="project">Projeto</label>
+        <input type="text" id="project" name="project" placeholder="meu-projeto" required>
+      </div>
+
+      <div class="form-row">
+        <label for="pat">Personal Access Token (PAT)</label>
+        <input type="password" id="pat" name="pat" placeholder="••••••••••••" required autocomplete="off">
+        <small class="muted">Escopos mínimos: <code>Code: Read</code>, <code>Work Items: Read</code>, <code>Project: Read</code>.</small>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="primary">Salvar</button>
+        <button type="button" id="test-btn">Testar conexão</button>
+        <button type="button" id="clear-btn">Limpar</button>
+      </div>
+    </form>
+
+    <div id="status" style="margin-top: 16px;"></div>
+  </div>
+
+  <div class="card" style="max-width: 640px; margin-top: 16px;">
+    <h3>Como gerar o PAT</h3>
+    <ol style="margin: 0; padding-left: 20px;">
+      <li>Abra <a href="https://dev.azure.com" target="_blank" rel="noopener">dev.azure.com</a> e faça login.</li>
+      <li>Clique no avatar → <em>Security</em> → <em>Personal access tokens</em>.</li>
+      <li>Clique em <em>New Token</em>, defina um nome e expiração.</li>
+      <li>Selecione os escopos: <code>Code (Read)</code>, <code>Work Items (Read)</code>, <code>Project and Team (Read)</code>.</li>
+      <li>Copie o token e cole aqui.</li>
+    </ol>
+  </div>
+</main>
+
+<script type="module">
+  import { getConfig, setConfig, clearConfig } from './js/auth.js'
+  import { testConnection } from './js/api.js'
+  import { clearCache } from './js/cache.js'
+  import { renderTopbar, escapeHtml } from './js/ui.js'
+
+  renderTopbar('config')
+
+  const form = document.getElementById('config-form')
+  const statusEl = document.getElementById('status')
+  const testBtn = document.getElementById('test-btn')
+  const clearBtn = document.getElementById('clear-btn')
+
+  const current = getConfig()
+  document.getElementById('org').value = current.org
+  document.getElementById('project').value = current.project
+  document.getElementById('pat').value = current.pat
+
+  function readForm() {
+    return {
+      org: document.getElementById('org').value.trim(),
+      project: document.getElementById('project').value.trim(),
+      pat: document.getElementById('pat').value,
+    }
+  }
+
+  function showStatus(kind, message) {
+    statusEl.innerHTML = `<div class="alert ${kind}">${escapeHtml(message)}</div>`
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault()
+    const cfg = readForm()
+    setConfig(cfg)
+    clearCache()
+    showStatus('success', 'Configuração salva. Cache limpo.')
+  })
+
+  testBtn.addEventListener('click', async () => {
+    const cfg = readForm()
+    if (!cfg.org || !cfg.project || !cfg.pat) {
+      showStatus('danger', 'Preencha todos os campos antes de testar.')
+      return
+    }
+    setConfig(cfg)
+    showStatus('info', 'Testando conexão...')
+    testBtn.disabled = true
+    try {
+      const result = await testConnection()
+      const count = result.count ?? (result.value?.length ?? 0)
+      showStatus('success', `Conexão OK. Organização respondeu com ${count} projeto(s) visível(is).`)
+    } catch (e) {
+      showStatus('danger', `Falha: ${e.message}`)
+    } finally {
+      testBtn.disabled = false
+    }
+  })
+
+  clearBtn.addEventListener('click', () => {
+    if (!confirm('Remover PAT, organização e projeto salvos?')) return
+    clearConfig()
+    clearCache()
+    document.getElementById('org').value = ''
+    document.getElementById('project').value = ''
+    document.getElementById('pat').value = ''
+    showStatus('info', 'Configuração removida.')
+  })
+</script>
+</body>
+</html>

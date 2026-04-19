@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desenvolvedor — Developer Dashboard</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header class="topbar"></header>
+<main>
+  <h1>Visão individual</h1>
+
+  <div class="filters">
+    <div class="field">
+      <label for="dev-select">Desenvolvedor</label>
+      <select id="dev-select"><option value="">Selecione...</option></select>
+    </div>
+    <div class="field">
+      <label>Período</label>
+      <div class="pill-group" id="period-group">
+        <button data-days="7">7 dias</button>
+        <button data-days="30" class="active">30 dias</button>
+        <button data-days="90">90 dias</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="refresh-btn">Recarregar</button>
+    </div>
+  </div>
+
+  <div id="global-status"></div>
+  <div id="dev-content" class="hidden">
+    <div class="grid grid-4" id="kpi-row"></div>
+
+    <div class="grid grid-2" style="margin-top: 16px;">
+      <div class="card">
+        <div class="card-header"><h2>Commits por dia</h2></div>
+        <div class="chart-wrap"><canvas id="chart-commits"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Status das PRs autoradas</h2></div>
+        <div class="chart-wrap"><canvas id="chart-prs"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header"><h2>Últimos commits</h2></div>
+      <div id="commits-table"></div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header"><h2>PRs como autor</h2></div>
+      <div id="prs-table"></div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header"><h2>Atuação como revisor</h2></div>
+      <div id="reviewer-table"></div>
+    </div>
+
+    <div class="card" style="margin-top: 16px;">
+      <div class="card-header"><h2>Work items atribuídos</h2></div>
+      <div id="wi-table"></div>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+  import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError, formatDate } from './js/ui.js'
+  import { clearCache } from './js/cache.js'
+  import { createChart, PALETTE } from './js/charts.js'
+  import { loadCommitsAllRepos, loadPullRequests, commitsOverTime, prStatusSummary } from './js/modules/commits.js'
+  import { loadActiveWorkItems, listUniqueAssignees } from './js/modules/workitems.js'
+  import { loadReviews } from './js/modules/reviews.js'
+
+  renderTopbar('developer')
+  if (!requireConfigOrRedirect()) throw new Error('redirecting')
+
+  const state = { days: 30, developer: '' }
+
+  document.getElementById('period-group').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-days]')
+    if (!btn) return
+    document.querySelectorAll('#period-group button').forEach(b => b.classList.remove('active'))
+    btn.classList.add('active')
+    state.days = Number(btn.dataset.days)
+    if (state.developer) loadDeveloper()
+  })
+
+  document.getElementById('refresh-btn').addEventListener('click', () => {
+    clearCache()
+    if (state.developer) loadDeveloper()
+    else populateDevelopers()
+  })
+
+  document.getElementById('dev-select').addEventListener('change', (e) => {
+    state.developer = e.target.value
+    if (state.developer) loadDeveloper()
+    else document.getElementById('dev-content').classList.add('hidden')
+  })
+
+  async function populateDevelopers() {
+    const status = document.getElementById('global-status')
+    status.innerHTML = '<div class="alert info"><span class="spinner"></span> Descobrindo desenvolvedores...</div>'
+    try {
+      const [items, prs] = await Promise.all([
+        loadActiveWorkItems({ days: 90 }),
+        loadPullRequests({ days: 90 }),
+      ])
+      const names = new Set(listUniqueAssignees(items))
+      for (const pr of prs) {
+        const n = pr.createdBy?.displayName
+        if (n) names.add(n)
+      }
+      const select = document.getElementById('dev-select')
+      select.innerHTML = '<option value="">Selecione...</option>'
+      for (const n of [...names].sort()) {
+        const opt = document.createElement('option')
+        opt.value = n
+        opt.textContent = n
+        select.appendChild(opt)
+      }
+      status.innerHTML = ''
+    } catch (e) {
+      showError('global-status', `Erro ao listar desenvolvedores: ${e.message}`)
+    }
+  }
+
+  function filterByDeveloper({ commits, prs, items, reviewPrs }, dev) {
+    const low = dev.toLowerCase()
+    const match = (s) => (s || '').toLowerCase().includes(low)
+    return {
+      commits: commits.filter(c => match(c.author?.name) || match(c.author?.email)),
+      prs: prs.filter(p => match(p.createdBy?.displayName) || match(p.createdBy?.uniqueName)),
+      items: items.filter(wi => match(wi.fields?.['System.AssignedTo']?.displayName)),
+      reviewerPrs: reviewPrs.filter(pr => (pr.reviewers || []).some(r => match(r.displayName) && !r.isContainer)),
+    }
+  }
+
+  function renderKpis({ commits, prs, items, reviewerPrs }) {
+    document.getElementById('kpi-row').innerHTML = `
+      <div class="card stat"><div class="label">Commits</div><div class="value">${commits.length}</div></div>
+      <div class="card stat"><div class="label">PRs autoradas</div><div class="value">${prs.length}</div></div>
+      <div class="card stat"><div class="label">Revisões</div><div class="value">${reviewerPrs.length}</div></div>
+      <div class="card stat"><div class="label">Work items</div><div class="value">${items.length}</div></div>
+    `
+  }
+
+  function renderCommitsChart(commits) {
+    const buckets = commitsOverTime(commits, state.days)
+    createChart(document.getElementById('chart-commits'), {
+      type: 'bar',
+      data: {
+        labels: [...buckets.keys()],
+        datasets: [{ label: 'Commits', data: [...buckets.values()], backgroundColor: PALETTE[0] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 10 } } } }
+    })
+  }
+
+  function renderPrChart(prs) {
+    const s = prStatusSummary(prs)
+    createChart(document.getElementById('chart-prs'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Ativas', 'Concluídas', 'Abandonadas'],
+        datasets: [{ data: [s.active, s.completed, s.abandoned], backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[3]] }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    })
+  }
+
+  function renderCommitsTable(commits) {
+    const rows = commits.slice(0, 30).map(c => `
+      <tr>
+        <td>${escapeHtml(formatDate(c.author?.date))}</td>
+        <td>${escapeHtml(c.repoName || '')}</td>
+        <td>${escapeHtml((c.comment || '').split('\n')[0].slice(0, 120))}</td>
+      </tr>
+    `).join('')
+    document.getElementById('commits-table').innerHTML = `
+      <table>
+        <thead><tr><th>Data</th><th>Repositório</th><th>Mensagem</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" class="muted">Nenhum commit no período.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  function renderPrsTable(prs) {
+    const rows = prs.slice(0, 30).map(p => `
+      <tr>
+        <td>#${p.pullRequestId}</td>
+        <td>${escapeHtml(p.title || '')}</td>
+        <td>${escapeHtml(p.repository?.name || '')}</td>
+        <td>${statusBadge(p.status)}</td>
+        <td>${escapeHtml(formatDate(p.creationDate))}</td>
+      </tr>
+    `).join('')
+    document.getElementById('prs-table').innerHTML = `
+      <table>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Status</th><th>Criada</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted">Nenhuma PR no período.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  function renderReviewerTable(reviewerPrs, devName) {
+    const low = devName.toLowerCase()
+    const rows = reviewerPrs.slice(0, 30).map(pr => {
+      const r = (pr.reviewers || []).find(x => (x.displayName || '').toLowerCase().includes(low))
+      const vote = r?.vote ?? 0
+      return `
+        <tr>
+          <td>#${pr.pullRequestId}</td>
+          <td>${escapeHtml(pr.title || '')}</td>
+          <td>${escapeHtml(pr.createdBy?.displayName || '')}</td>
+          <td>${voteBadge(vote)}</td>
+          <td>${escapeHtml(formatDate(pr.creationDate))}</td>
+        </tr>`
+    }).join('')
+    document.getElementById('reviewer-table').innerHTML = `
+      <table>
+        <thead><tr><th>PR</th><th>Título</th><th>Autor</th><th>Voto</th><th>Criada</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted">Nenhuma revisão no período.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  function renderWiTable(items) {
+    const rows = items.slice(0, 30).map(wi => {
+      const f = wi.fields || {}
+      return `
+        <tr>
+          <td>#${wi.id}</td>
+          <td>${escapeHtml(f['System.WorkItemType'] || '')}</td>
+          <td>${escapeHtml(f['System.Title'] || '')}</td>
+          <td>${escapeHtml(f['System.State'] || '')}</td>
+          <td>${f['Microsoft.VSTS.Scheduling.StoryPoints'] ?? '—'}</td>
+        </tr>`
+    }).join('')
+    document.getElementById('wi-table').innerHTML = `
+      <table>
+        <thead><tr><th>ID</th><th>Tipo</th><th>Título</th><th>Estado</th><th>SP</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="muted">Nenhum work item atribuído.</td></tr>'}</tbody>
+      </table>
+    `
+  }
+
+  function statusBadge(status) {
+    const map = { active: 'primary', completed: 'success', abandoned: 'danger' }
+    return `<span class="badge ${map[status] || ''}">${escapeHtml(status || '')}</span>`
+  }
+  function voteBadge(v) {
+    if (v >= 5) return '<span class="badge success">Aprovou</span>'
+    if (v <= -10) return '<span class="badge danger">Rejeitou</span>'
+    if (v === -5) return '<span class="badge warning">Aguardando autor</span>'
+    return '<span class="badge">—</span>'
+  }
+
+  async function loadDeveloper() {
+    const status = document.getElementById('global-status')
+    const content = document.getElementById('dev-content')
+    content.classList.add('hidden')
+    status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando...</div>'
+    try {
+      const [commits, prs, items, reviewPrs] = await Promise.all([
+        loadCommitsAllRepos({ days: state.days }),
+        loadPullRequests({ days: state.days }),
+        loadActiveWorkItems({ days: Math.max(state.days, 90) }),
+        loadReviews({ days: state.days }),
+      ])
+      const data = filterByDeveloper({ commits, prs, items, reviewPrs }, state.developer)
+      renderKpis(data)
+      renderCommitsChart(data.commits)
+      renderPrChart(data.prs)
+      renderCommitsTable(data.commits)
+      renderPrsTable(data.prs)
+      renderReviewerTable(data.reviewerPrs, state.developer)
+      renderWiTable(data.items)
+      status.innerHTML = ''
+      content.classList.remove('hidden')
+    } catch (e) {
+      console.error(e)
+      showError('global-status', `Erro: ${e.message}`)
+    }
+  }
+
+  populateDevelopers()
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Developer Dashboard — Azure DevOps</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+<header class="topbar"></header>
+<main>
+  <h1>Developer Dashboard</h1>
+  <p class="muted">Acompanhamento de desenvolvedores consumindo dados da API REST do Azure DevOps.</p>
+
+  <div class="grid grid-3" style="margin-top: 20px;">
+    <a class="card" href="dashboard.html" style="text-decoration:none; color: inherit;">
+      <h3>Visão do time</h3>
+      <p class="muted">Velocity por sprint, cycle time, distribuição de work items e saúde do backlog.</p>
+    </a>
+    <a class="card" href="developer.html" style="text-decoration:none; color: inherit;">
+      <h3>Visão individual</h3>
+      <p class="muted">Commits, PRs, revisões feitas e recebidas por desenvolvedor.</p>
+    </a>
+    <a class="card" href="config.html" style="text-decoration:none; color: inherit;">
+      <h3>Configuração</h3>
+      <p class="muted">PAT, organização, projeto e teste de conexão.</p>
+    </a>
+  </div>
+
+  <div id="status" style="margin-top: 24px;"></div>
+</main>
+
+<script type="module">
+  import { renderTopbar } from './js/ui.js'
+  import { hasConfig } from './js/auth.js'
+
+  renderTopbar('home')
+
+  if (!hasConfig()) {
+    document.getElementById('status').innerHTML =
+      '<div class="alert info">Primeiro acesso? <a href="config.html">Configure suas credenciais</a> antes de abrir os dashboards.</div>'
+  }
+</script>
+</body>
+</html>

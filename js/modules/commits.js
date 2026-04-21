@@ -101,5 +101,5 @@ export function avgApprovalTime(prs) {
   )
   if (!approved.length) return null
   const total = approved.reduce((sum, pr) => sum + daysBetween(pr.creationDate, pr.closedDate), 0)
-  return total / approved.length
+  return (total / approved.length) * 24
 }

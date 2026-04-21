@@ -1,5 +1,5 @@
 import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet } from '../api.js'
-import { daysAgoIso, bucketByDay, groupBy } from '../ui.js'
+import { daysAgoIso, bucketByDay, groupBy, daysBetween } from '../ui.js'
 
 function norm(s) {
   return (s || '').toLowerCase().trim()
@@ -91,4 +91,15 @@ export function prStatusSummary(prs) {
     completed: prs.filter(p => p.status === 'completed').length,
     abandoned: prs.filter(p => p.status === 'abandoned').length,
   }
+}
+
+export function avgApprovalTime(prs) {
+  const approved = prs.filter(pr =>
+    pr.status === 'completed' &&
+    pr.closedDate &&
+    (pr.reviewers || []).some(r => !r.isContainer && r.vote >= 5)
+  )
+  if (!approved.length) return null
+  const total = approved.reduce((sum, pr) => sum + daysBetween(pr.creationDate, pr.closedDate), 0)
+  return total / approved.length
 }

@@ -102,7 +102,7 @@
   import { listTeams } from './js/api.js'
   import {
     loadCommitsAllRepos, loadPullRequests,
-    commitsOverTime, prsByAuthor, prStatusSummary, commitsByAuthor
+    commitsOverTime, prsByAuthor, prStatusSummary, commitsByAuthor, avgApprovalTime
   } from './js/modules/commits.js'
   import { computeVelocity, burndownData } from './js/modules/velocity.js'
   import { loadCompletedWorkItems, computeCycleTime, scatterPoints, trendLine, cycleTimeByType } from './js/modules/cycletime.js'
@@ -153,17 +153,18 @@
     }
   }
 
-  function renderKpis({ commits, prs, velocity, cycle, activeItems }) {
+  function renderKpis({ commits, prs, cycle }) {
     const avgCycle = cycle.length
       ? (cycle.reduce((s, r) => s + r.cycle, 0) / cycle.length).toFixed(1)
       : '—'
-    const lastSprint = velocity[velocity.length - 1]
+    const approval = avgApprovalTime(prs)
+    const approvalDisplay = approval != null ? approval.toFixed(1) : '—'
     const el = document.getElementById('kpi-row')
     el.innerHTML = `
       <div class="card stat"><div class="label">Commits (${state.days}d)</div><div class="value">${commits.length}</div></div>
       <div class="card stat"><div class="label">PRs (${state.days}d)</div><div class="value">${prs.length}</div></div>
       <div class="card stat"><div class="label">Cycle time médio</div><div class="value">${avgCycle}<span style="font-size:14px"> dias</span></div></div>
-      <div class="card stat"><div class="label">Última sprint</div><div class="value">${lastSprint ? lastSprint.pointsDone + '/' + lastSprint.points : '—'}<span style="font-size:14px"> SP</span></div><div class="sub">${lastSprint?.sprint ?? ''}</div></div>
+      <div class="card stat"><div class="label">Aprovação média</div><div class="value">${approvalDisplay}<span style="font-size:14px"> dias</span></div></div>
     `
   }
 
@@ -371,7 +372,7 @@
 
       const cycleRows = computeCycleTime(cycleItems)
 
-      renderKpis({ commits, prs, velocity, cycle: cycleRows, activeItems })
+      renderKpis({ commits, prs, cycle: cycleRows })
       renderCommitsChart(commits)
       renderPrChart(prs)
       renderVelocityChart(velocity)

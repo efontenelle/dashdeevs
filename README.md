@@ -10,18 +10,25 @@ Dashboard web estático para acompanhar métricas de desenvolvedores consumindo 
 
 ## Como rodar
 
-Por causa das restrições de CORS e de ES Modules em `file://`, é preciso servir por HTTP. Qualquer servidor estático resolve:
+> ⚠️ **Não funciona abrindo os HTMLs direto do disco (`file://`).** O navegador bloqueia ES Modules vindos de `file://` por CORS. Se tentar, o dashboard mostra uma tela explicando como servir por HTTP.
+
+A forma mais simples é usar os scripts prontos na raiz do projeto:
+
+- **Windows:** duplo-clique em `start.bat`
+- **macOS / Linux:** `./start.sh` no terminal
+
+Eles sobem um servidor estático em `http://localhost:8080` e abrem o navegador automaticamente. Requerem Python 3 **ou** Node.js (`npx`) instalado.
+
+Alternativa manual:
 
 ```bash
 # a partir da raiz do projeto
-npx serve .
-# ou
 python -m http.server 8080
+# ou
+npx serve -l 8080 .
 ```
 
-Abra `http://localhost:3000` (ou a porta indicada pelo servidor) e navegue até `config.html` para configurar o acesso.
-
-> Abrir direto `index.html` via `file://` pode funcionar em alguns navegadores, mas é mais seguro servir por HTTP.
+Depois abra `http://localhost:8080/index.html` e navegue até `config.html` para configurar o acesso.
 
 ## Primeiro acesso
 

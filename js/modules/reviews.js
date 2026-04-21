@@ -1,5 +1,22 @@
-import { listPullRequests, getPullRequestThreads } from '../api.js'
+import { listPullRequests, getPullRequestThreads, getTeamMemberIdentifierSet } from '../api.js'
 import { daysAgoIso, daysBetween } from '../ui.js'
+
+function norm(s) {
+  return (s || '').toLowerCase().trim()
+}
+
+function prInvolvesTeam(pr, memberSet) {
+  const u = norm(pr.createdBy?.uniqueName)
+  const d = norm(pr.createdBy?.displayName)
+  if ((u && memberSet.has(u)) || (d && memberSet.has(d))) return true
+  for (const r of pr.reviewers || []) {
+    if (r.isContainer) continue
+    const ru = norm(r.uniqueName)
+    const rd = norm(r.displayName)
+    if ((ru && memberSet.has(ru)) || (rd && memberSet.has(rd))) return true
+  }
+  return false
+}
 
 // Azure DevOps reviewer vote codes
 // 10 = approved, 5 = approved with suggestions, 0 = no vote, -5 = waiting, -10 = rejected
@@ -11,13 +28,16 @@ function voteStatus(vote) {
   return 'none'
 }
 
-export async function loadReviews({ days } = {}) {
+export async function loadReviews({ days, team } = {}) {
+  const memberSet = await getTeamMemberIdentifierSet(team)
   const since = new Date(daysAgoIso(days))
   const [completed, active] = await Promise.all([
     listPullRequests({ status: 'completed', top: 500 }),
     listPullRequests({ status: 'active', top: 500 }),
   ])
-  return [...completed, ...active].filter(pr => new Date(pr.creationDate) >= since)
+  let all = [...completed, ...active].filter(pr => new Date(pr.creationDate) >= since)
+  if (memberSet) all = all.filter(pr => prInvolvesTeam(pr, memberSet))
+  return all
 }
 
 export function reviewStatsByReviewer(prs) {

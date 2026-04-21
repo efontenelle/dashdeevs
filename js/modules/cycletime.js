@@ -1,14 +1,16 @@
-import { queryByWiql, getWorkItems, getWorkItemRevisions } from '../api.js'
+import { queryByWiql, getWorkItems, getWorkItemRevisions, getTeamAreaPaths, areaPathWiqlClause } from '../api.js'
 import { daysBetween } from '../ui.js'
 
 const IN_PROGRESS_STATES = ['Active', 'In Progress', 'Committed', 'Doing']
 const DONE_STATES = ['Done', 'Closed', 'Completed', 'Resolved']
 
 export async function loadCompletedWorkItems({ days = 90, team } = {}) {
+  const areaClause = areaPathWiqlClause(await getTeamAreaPaths(team))
   const wiql = `
     SELECT [System.Id]
     FROM WorkItems
     WHERE [System.TeamProject] = @project
+      ${areaClause}
       AND [System.State] IN ('Done', 'Closed', 'Completed', 'Resolved')
       AND [System.ChangedDate] >= @today - ${days}
     ORDER BY [System.ChangedDate] DESC

@@ -1,7 +1,29 @@
-import { listRepositories, listCommits, listPullRequests } from '../api.js'
+import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet } from '../api.js'
 import { daysAgoIso, bucketByDay, groupBy } from '../ui.js'
 
-export async function loadCommitsAllRepos({ days, author } = {}) {
+function norm(s) {
+  return (s || '').toLowerCase().trim()
+}
+
+function commitMatchesTeam(c, memberSet) {
+  const email = norm(c.author?.email)
+  const name = norm(c.author?.name)
+  const cEmail = norm(c.committer?.email)
+  const cName = norm(c.committer?.name)
+  return (email && memberSet.has(email))
+      || (name && memberSet.has(name))
+      || (cEmail && memberSet.has(cEmail))
+      || (cName && memberSet.has(cName))
+}
+
+function prCreatorMatchesTeam(pr, memberSet) {
+  const u = norm(pr.createdBy?.uniqueName)
+  const d = norm(pr.createdBy?.displayName)
+  return (u && memberSet.has(u)) || (d && memberSet.has(d))
+}
+
+export async function loadCommitsAllRepos({ days, author, team } = {}) {
+  const memberSet = await getTeamMemberIdentifierSet(team)
   const repos = await listRepositories()
   const fromDate = daysAgoIso(days)
   const all = []
@@ -13,10 +35,12 @@ export async function loadCommitsAllRepos({ days, author } = {}) {
       console.warn(`Falha ao listar commits do repo ${r.name}:`, e.message)
     }
   }))
-  return all
+  if (!memberSet) return all
+  return all.filter(c => commitMatchesTeam(c, memberSet))
 }
 
-export async function loadPullRequests({ days, author } = {}) {
+export async function loadPullRequests({ days, author, team } = {}) {
+  const memberSet = await getTeamMemberIdentifierSet(team)
   const since = new Date(daysAgoIso(days))
   const [active, completed, abandoned] = await Promise.all([
     listPullRequests({ status: 'active', top: 500 }),
@@ -24,7 +48,8 @@ export async function loadPullRequests({ days, author } = {}) {
     listPullRequests({ status: 'abandoned', top: 500 }),
   ])
   const all = [...active, ...completed, ...abandoned]
-  const filtered = all.filter(pr => new Date(pr.creationDate) >= since)
+  let filtered = all.filter(pr => new Date(pr.creationDate) >= since)
+  if (memberSet) filtered = filtered.filter(pr => prCreatorMatchesTeam(pr, memberSet))
   if (author) {
     const needle = author.toLowerCase()
     return filtered.filter(pr =>

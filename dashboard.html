@@ -360,12 +360,13 @@
     const status = document.getElementById('global-status')
     status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
     try {
+      const team = state.team || undefined
       const [commits, prs, velocity, cycleItems, activeItems] = await Promise.all([
-        loadCommitsAllRepos({ days: state.days }),
-        loadPullRequests({ days: state.days }),
-        computeVelocity({ team: state.team || undefined, limit: 6 }).catch(e => { console.warn(e); return [] }),
-        loadCompletedWorkItems({ days: Math.max(state.days, 60), team: state.team || undefined }).catch(e => { console.warn(e); return [] }),
-        loadActiveWorkItems({ days: state.days, team: state.team || undefined }).catch(e => { console.warn(e); return [] }),
+        loadCommitsAllRepos({ days: state.days, team }),
+        loadPullRequests({ days: state.days, team }),
+        computeVelocity({ team, limit: 6 }).catch(e => { console.warn(e); return [] }),
+        loadCompletedWorkItems({ days: Math.max(state.days, 60), team }).catch(e => { console.warn(e); return [] }),
+        loadActiveWorkItems({ days: state.days, team }).catch(e => { console.warn(e); return [] }),
       ])
 
       const cycleRows = computeCycleTime(cycleItems)
@@ -381,7 +382,7 @@
       renderBacklogHealth(backlogHealth(activeItems))
       renderAuthorTable(commits, prs)
 
-      const reviewPrs = await loadReviews({ days: state.days })
+      const reviewPrs = await loadReviews({ days: state.days, team })
       const reviewStats = reviewStatsByReviewer(reviewPrs)
       const commentStats = await computeCommentStats(reviewPrs, { maxPrs: 30 })
       renderReviewsTable(reviewStats, commentStats)

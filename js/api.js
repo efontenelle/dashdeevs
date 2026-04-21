@@ -112,6 +112,57 @@ export async function listTeams() {
   return data.value || []
 }
 
+export async function listTeamMembers(team) {
+  if (!team) return []
+  const { org, project } = getConfig()
+  const url = buildUrl(
+    org, '',
+    `/_apis/projects/${encodeURIComponent(project)}/teams/${encodeURIComponent(team)}/members`,
+    {}
+  )
+  const data = await cached(url, () => request(url))
+  return (data.value || []).map(m => m.identity || m)
+}
+
+export async function getTeamMemberIdentifierSet(team) {
+  if (!team) return null
+  const members = await listTeamMembers(team)
+  const set = new Set()
+  for (const m of members) {
+    const add = (v) => { if (v) set.add(String(v).toLowerCase().trim()) }
+    add(m.uniqueName)
+    add(m.displayName)
+    add(m.mailAddress)
+  }
+  return set.size ? set : null
+}
+
+export async function getTeamAreaPaths(team) {
+  if (!team) return []
+  const { org, project } = getConfig()
+  const url = buildUrl(
+    org, project,
+    `/${encodeURIComponent(team)}/_apis/work/teamsettings/teamfieldvalues`,
+    {}
+  )
+  const data = await cached(url, () => request(url))
+  return (data.values || []).map(v => ({
+    path: v.value,
+    includeChildren: v.includeChildren !== false,
+  }))
+}
+
+export function areaPathWiqlClause(areaPaths) {
+  if (!areaPaths || !areaPaths.length) return ''
+  const clauses = areaPaths.map(a => {
+    const escaped = String(a.path).replace(/'/g, "''")
+    return a.includeChildren
+      ? `[System.AreaPath] UNDER '${escaped}'`
+      : `[System.AreaPath] = '${escaped}'`
+  })
+  return `AND (${clauses.join(' OR ')})`
+}
+
 export async function queryByWiql(wiql, team) {
   const scope = team ? `/${encodeURIComponent(team)}` : ''
   return post(`${scope}/_apis/wit/wiql`, { query: wiql })

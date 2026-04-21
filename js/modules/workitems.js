@@ -1,10 +1,12 @@
-import { queryByWiql, getWorkItems } from '../api.js'
+import { queryByWiql, getWorkItems, getTeamAreaPaths, areaPathWiqlClause } from '../api.js'
 
 export async function loadActiveWorkItems({ team, days = 90 } = {}) {
+  const areaClause = areaPathWiqlClause(await getTeamAreaPaths(team))
   const wiql = `
     SELECT [System.Id]
     FROM WorkItems
     WHERE [System.TeamProject] = @project
+      ${areaClause}
       AND [System.ChangedDate] >= @today - ${days}
     ORDER BY [System.ChangedDate] DESC
   `

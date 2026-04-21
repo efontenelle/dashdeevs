@@ -1,12 +1,12 @@
 import { getAuthHeader, getConfig } from './auth.js'
 import { cached } from './cache.js'
 
-const BASE = 'https://dev.azure.com'
+const BASE = '/_azdo'
 const API_VERSION = '7.0'
 
 function buildUrl(org, project, path, params = {}) {
   const scope = project ? `${org}/${encodeURIComponent(project)}` : org
-  const url = new URL(`${BASE}/${scope}${path}`)
+  const url = new URL(`${BASE}/${scope}${path}`, location.origin)
   url.searchParams.set('api-version', API_VERSION)
   for (const [k, v] of Object.entries(params)) {
     if (v != null && v !== '') url.searchParams.set(k, v)

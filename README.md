@@ -10,22 +10,26 @@ Dashboard web estático para acompanhar métricas de desenvolvedores consumindo 
 
 ## Como rodar
 
-> ⚠️ **Não funciona abrindo os HTMLs direto do disco (`file://`).** O navegador bloqueia ES Modules vindos de `file://` por CORS. Se tentar, o dashboard mostra uma tela explicando como servir por HTTP.
+> ⚠️ **Não funciona abrindo os HTMLs direto do disco (`file://`).** ES Modules são bloqueados nessa origem. Também **não funciona com um servidor estático simples** (`python -m http.server`, `npx serve`): o Azure DevOps não devolve `Access-Control-Allow-Origin` para chamadas do browser com PAT, e a maioria dos endpoints usados aqui (WIQL, work items) seria bloqueada por CORS.
 
-A forma mais simples é usar os scripts prontos na raiz do projeto:
+Por isso o projeto inclui um servidor Node.js mínimo (`server.js`, sem dependências externas) que:
+
+1. Serve os arquivos estáticos em `http://localhost:8080`.
+2. Faz proxy de `/_azdo/*` para `https://dev.azure.com/*`, repassando o header `Authorization`. Como o browser conversa same-origin com o proxy, não há CORS.
+
+Use os scripts prontos:
 
 - **Windows:** duplo-clique em `start.bat`
 - **macOS / Linux:** `./start.sh` no terminal
 
-Eles sobem um servidor estático em `http://localhost:8080` e abrem o navegador automaticamente. Requerem Python 3 **ou** Node.js (`npx`) instalado.
+Requerem **Node.js** instalado ([nodejs.org](https://nodejs.org/)). Nenhum `npm install` é necessário.
 
 Alternativa manual:
 
 ```bash
-# a partir da raiz do projeto
-python -m http.server 8080
-# ou
-npx serve -l 8080 .
+node server.js
+# ou com outra porta:
+PORT=3000 node server.js
 ```
 
 Depois abra `http://localhost:8080/index.html` e navegue até `config.html` para configurar o acesso.
@@ -111,7 +115,7 @@ O modo escuro segue `prefers-color-scheme` por padrão e pode ser alternado manu
 
 ## Observações
 
-- A API do Azure DevOps permite CORS para chamadas com header `Authorization` em Basic Auth — não é necessário proxy.
+- O Azure DevOps **não** devolve CORS para chamadas diretas do browser com PAT em endpoints como WIQL/work items. O `server.js` local repassa as chamadas de `/_azdo/*` para `https://dev.azure.com/*`, contornando o bloqueio sem expor a URL original.
 - Tokens enviados como `Basic base64(":PAT")`.
 - Versão de API usada: `api-version=7.0`.
 - O cache é invalidado automaticamente após 15 minutos. Use **Recarregar** ou **Limpar cache** no dashboard para forçar busca fresca.

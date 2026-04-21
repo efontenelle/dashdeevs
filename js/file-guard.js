@@ -10,7 +10,7 @@
         '<ul style="margin: 8px 0 0 20px; padding: 0;">' +
           '<li><strong>Windows:</strong> duplo-clique em <code>start.bat</code> na raiz do projeto.</li>' +
           '<li><strong>macOS / Linux:</strong> execute <code>./start.sh</code> no terminal.</li>' +
-          '<li>Alternativa manual: <code>python -m http.server 8080</code> e abra <code>http://localhost:8080</code>.</li>' +
+          '<li>Alternativa manual: <code>node server.js</code> e abra <code>http://localhost:8080</code>.</li>' +
         '</ul>' +
       '</div>' +
       '<p style="margin-top: 16px; color: #6e7781;">Em seguida abra <code>http://localhost:8080/index.html</code> no navegador.</p>' +

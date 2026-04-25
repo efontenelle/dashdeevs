@@ -93,6 +93,13 @@ export function prStatusSummary(prs) {
   }
 }
 
+export async function loadOpenPullRequests({ team } = {}) {
+  const memberSet = await getTeamMemberIdentifierSet(team)
+  const prs = await listPullRequests({ status: 'active', top: 500 })
+  if (!memberSet) return prs
+  return prs.filter(pr => prCreatorMatchesTeam(pr, memberSet))
+}
+
 export function avgApprovalTime(prs) {
   const approved = prs.filter(pr =>
     pr.status === 'completed' &&

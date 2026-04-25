@@ -47,8 +47,8 @@
       <div class="chart-wrap"><canvas id="chart-commits"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-header"><h2>Status das PRs</h2></div>
-      <div class="chart-wrap"><canvas id="chart-prs"></canvas></div>
+      <div class="card-header"><h2>PRs abertas</h2></div>
+      <div id="open-prs-list"></div>
     </div>
   </div>
 
@@ -97,12 +97,13 @@
 
 <script type="module">
   import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError } from './js/ui.js'
+  import { getConfig } from './js/auth.js'
   import { clearCache } from './js/cache.js'
   import { createChart, PALETTE } from './js/charts.js'
   import { listTeams } from './js/api.js'
   import {
-    loadCommitsAllRepos, loadPullRequests,
-    commitsOverTime, prsByAuthor, prStatusSummary, commitsByAuthor, avgApprovalTime
+    loadCommitsAllRepos, loadPullRequests, loadOpenPullRequests,
+    commitsOverTime, prsByAuthor, commitsByAuthor, avgApprovalTime
   } from './js/modules/commits.js'
   import { computeVelocity, burndownData } from './js/modules/velocity.js'
   import { loadCompletedWorkItems, computeCycleTime, scatterPoints, trendLine, cycleTimeByType } from './js/modules/cycletime.js'
@@ -182,16 +183,56 @@
     })
   }
 
-  function renderPrChart(prs) {
-    const s = prStatusSummary(prs)
-    createChart(document.getElementById('chart-prs'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Ativas', 'Concluídas', 'Abandonadas'],
-        datasets: [{ data: [s.active, s.completed, s.abandoned], backgroundColor: [PALETTE[0], PALETTE[1], PALETTE[3]] }]
-      },
-      options: { responsive: true, maintainAspectRatio: false }
-    })
+  function formatOpenDuration(creationDate, now = new Date()) {
+    const ms = now - new Date(creationDate)
+    if (!Number.isFinite(ms) || ms < 0) return '—'
+    const totalHours = Math.floor(ms / (1000 * 60 * 60))
+    if (totalHours < 24) return `${totalHours}h`
+    const days = Math.floor(totalHours / 24)
+    const hours = totalHours % 24
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+  }
+
+  function buildPrUrl(pr) {
+    const { org, project } = getConfig()
+    const repo = encodeURIComponent(pr.repository?.name || '')
+    return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${repo}/pullrequest/${pr.pullRequestId}`
+  }
+
+  function renderOpenPrsList(openPrs) {
+    const container = document.getElementById('open-prs-list')
+    const sorted = openPrs
+      .slice()
+      .sort((a, b) => new Date(a.creationDate) - new Date(b.creationDate))
+      .slice(0, 20)
+
+    if (!sorted.length) {
+      container.innerHTML = `<p class="muted">Nenhuma PR aberta.</p>`
+      return
+    }
+
+    const now = new Date()
+    const body = sorted.map(p => {
+      const url = buildPrUrl(p)
+      return `
+        <tr>
+          <td>#${p.pullRequestId}</td>
+          <td><a href="${url}" target="_blank" rel="noopener">${escapeHtml(p.title || '(sem título)')}</a></td>
+          <td>${escapeHtml(p.repository?.name || '—')}</td>
+          <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
+          <td>${formatOpenDuration(p.creationDate, now)}</td>
+        </tr>
+      `
+    }).join('')
+
+    container.innerHTML = `
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th></tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    `
   }
 
   function renderVelocityChart(rows) {
@@ -362,9 +403,10 @@
     status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
     try {
       const team = state.team || undefined
-      const [commits, prs, velocity, cycleItems, activeItems] = await Promise.all([
+      const [commits, prs, openPrs, velocity, cycleItems, activeItems] = await Promise.all([
         loadCommitsAllRepos({ days: state.days, team }),
         loadPullRequests({ days: state.days, team }),
+        loadOpenPullRequests({ team }),
         computeVelocity({ team, limit: 6 }).catch(e => { console.warn(e); return [] }),
         loadCompletedWorkItems({ days: Math.max(state.days, 60), team }).catch(e => { console.warn(e); return [] }),
         loadActiveWorkItems({ days: state.days, team }).catch(e => { console.warn(e); return [] }),
@@ -374,7 +416,7 @@
 
       renderKpis({ commits, prs, cycle: cycleRows })
       renderCommitsChart(commits)
-      renderPrChart(prs)
+      renderOpenPrsList(openPrs)
       renderVelocityChart(velocity)
       renderBurnupChart(velocity)
       renderCycleTimeChart(cycleRows)

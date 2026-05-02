@@ -96,7 +96,7 @@
 </main>
 
 <script type="module">
-  import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError } from './js/ui.js'
+  import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError, formatOpenDuration, buildPrUrl } from './js/ui.js'
   import { getConfig } from './js/auth.js'
   import { clearCache } from './js/cache.js'
   import { createChart, PALETTE } from './js/charts.js'
@@ -183,21 +183,6 @@
     })
   }
 
-  function formatOpenDuration(creationDate, now = new Date()) {
-    const ms = now - new Date(creationDate)
-    if (!Number.isFinite(ms) || ms < 0) return '—'
-    const totalHours = Math.floor(ms / (1000 * 60 * 60))
-    if (totalHours < 24) return `${totalHours}h`
-    const days = Math.floor(totalHours / 24)
-    const hours = totalHours % 24
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`
-  }
-
-  function buildPrUrl(pr) {
-    const { org, project } = getConfig()
-    const repo = encodeURIComponent(pr.repository?.name || '')
-    return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${repo}/pullrequest/${pr.pullRequestId}`
-  }
 
   function renderOpenPrsList(openPrs) {
     const container = document.getElementById('open-prs-list')

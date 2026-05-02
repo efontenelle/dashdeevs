@@ -1,4 +1,4 @@
-import { hasConfig } from './auth.js'
+import { hasConfig, getConfig } from './auth.js'
 import { refreshChartsTheme } from './charts.js'
 
 const THEME_KEY = 'azdo_theme'
@@ -40,6 +40,7 @@ export function renderTopbar(active) {
     <nav>
       <a href="dashboard.html" ${active === 'dashboard' ? 'class="active"' : ''}>Time</a>
       <a href="developer.html" ${active === 'developer' ? 'class="active"' : ''}>Desenvolvedor</a>
+      <a href="codereview.html" ${active === 'codereview' ? 'class="active"' : ''}>Code Review</a>
       <a href="config.html" ${active === 'config' ? 'class="active"' : ''}>Configuração</a>
     </nav>
     <button id="theme-toggle" class="theme-toggle">Modo escuro</button>
@@ -132,4 +133,20 @@ export function bucketByDay(items, dateFn, days) {
 
 export function getQueryParam(name) {
   return new URLSearchParams(location.search).get(name)
+}
+
+export function formatOpenDuration(creationDate, now = new Date()) {
+  const ms = now - new Date(creationDate)
+  if (!Number.isFinite(ms) || ms < 0) return '—'
+  const totalHours = Math.floor(ms / (1000 * 60 * 60))
+  if (totalHours < 24) return `${totalHours}h`
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+}
+
+export function buildPrUrl(pr) {
+  const { org, project } = getConfig()
+  const repo = encodeURIComponent(pr.repository?.name || '')
+  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${repo}/pullrequest/${pr.pullRequestId}`
 }

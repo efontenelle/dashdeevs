@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Review — Developer Dashboard</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/components.css">
+<script src="js/file-guard.js"></script>
+</head>
+<body>
+<header class="topbar"></header>
+<main>
+  <h1>Code Review</h1>
+
+  <div class="filters">
+    <div class="field">
+      <label for="start-date">Data início</label>
+      <input type="date" id="start-date">
+    </div>
+    <div class="field">
+      <label for="end-date">Data fim</label>
+      <input type="date" id="end-date">
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="apply-btn" class="primary">Aplicar</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="refresh-btn">Recarregar</button>
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <button id="clear-cache-btn">Limpar cache</button>
+    </div>
+  </div>
+
+  <div id="global-status"></div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>Repositórios monitorados</h2>
+      <button id="toggle-all-repos">Marcar/Desmarcar todos</button>
+    </div>
+    <div id="repo-checkboxes" style="display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px;"></div>
+  </div>
+
+  <div class="grid grid-3" id="kpi-row" style="margin-top: 16px;"></div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>PRs abertas</h2></div>
+    <p class="muted" style="margin-top: 4px;">Ordenadas pelo maior tempo de espera. O filtro de data não se aplica a esta lista.</p>
+    <div id="open-prs-list"></div>
+  </div>
+</main>
+
+<script type="module">
+  import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError, formatOpenDuration, buildPrUrl } from './js/ui.js'
+  import { clearCache } from './js/cache.js'
+  import { listRepositories, listPullRequests } from './js/api.js'
+  import { avgApprovalTime } from './js/modules/commits.js'
+
+  renderTopbar('codereview')
+  if (!requireConfigOrRedirect()) throw new Error('redirecting')
+
+  const REPO_STORAGE_KEY = 'azdo_codereview_repos'
+
+  const state = {
+    startDate: null,
+    endDate: null,
+    selectedRepos: new Set(),
+    allRepos: [],
+  }
+
+  function initDates() {
+    const end = new Date()
+    const start = new Date()
+    start.setDate(start.getDate() - 30)
+    document.getElementById('start-date').value = start.toISOString().slice(0, 10)
+    document.getElementById('end-date').value = end.toISOString().slice(0, 10)
+    state.startDate = start
+    state.endDate = end
+  }
+
+  function readDates() {
+    const s = document.getElementById('start-date').value
+    const e = document.getElementById('end-date').value
+    if (s) { state.startDate = new Date(s + 'T00:00:00') }
+    if (e) { state.endDate = new Date(e + 'T23:59:59') }
+  }
+
+  function saveSelectedRepos() {
+    localStorage.setItem(REPO_STORAGE_KEY, JSON.stringify([...state.selectedRepos]))
+  }
+
+  function loadSavedRepos() {
+    try {
+      const raw = localStorage.getItem(REPO_STORAGE_KEY)
+      if (raw) return new Set(JSON.parse(raw))
+    } catch {}
+    return null
+  }
+
+  async function loadRepos() {
+    const repos = await listRepositories()
+    state.allRepos = repos
+    const saved = loadSavedRepos()
+    const container = document.getElementById('repo-checkboxes')
+
+    if (saved) {
+      state.selectedRepos = new Set([...saved].filter(id => repos.some(r => r.id === id)))
+    } else {
+      state.selectedRepos = new Set(repos.map(r => r.id))
+    }
+
+    container.innerHTML = repos.map(r => {
+      const checked = state.selectedRepos.has(r.id) ? 'checked' : ''
+      return `<label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+        <input type="checkbox" data-repo-id="${r.id}" ${checked}> ${escapeHtml(r.name)}
+      </label>`
+    }).join('')
+
+    container.addEventListener('change', (e) => {
+      const cb = e.target.closest('input[data-repo-id]')
+      if (!cb) return
+      if (cb.checked) state.selectedRepos.add(cb.dataset.repoId)
+      else state.selectedRepos.delete(cb.dataset.repoId)
+      saveSelectedRepos()
+      loadData()
+    })
+  }
+
+  document.getElementById('toggle-all-repos').addEventListener('click', () => {
+    const allChecked = state.selectedRepos.size === state.allRepos.length
+    const checkboxes = document.querySelectorAll('#repo-checkboxes input[type="checkbox"]')
+    if (allChecked) {
+      state.selectedRepos.clear()
+      checkboxes.forEach(cb => cb.checked = false)
+    } else {
+      state.allRepos.forEach(r => state.selectedRepos.add(r.id))
+      checkboxes.forEach(cb => cb.checked = true)
+    }
+    saveSelectedRepos()
+    loadData()
+  })
+
+  document.getElementById('apply-btn').addEventListener('click', () => {
+    readDates()
+    loadData()
+  })
+
+  document.getElementById('refresh-btn').addEventListener('click', () => {
+    clearCache()
+    readDates()
+    loadData()
+  })
+
+  document.getElementById('clear-cache-btn').addEventListener('click', () => {
+    clearCache()
+    alert('Cache limpo.')
+  })
+
+  function filterByRepo(prs) {
+    if (!state.selectedRepos.size) return []
+    return prs.filter(pr => state.selectedRepos.has(pr.repository?.id))
+  }
+
+  function filterByDate(prs) {
+    return prs.filter(pr => {
+      const date = new Date(pr.closedDate || pr.creationDate)
+      return date >= state.startDate && date <= state.endDate
+    })
+  }
+
+  function renderKpis(completedCount, abandonedCount, avgApproval) {
+    const approvalDisplay = avgApproval != null ? avgApproval.toFixed(1) : '—'
+    document.getElementById('kpi-row').innerHTML = `
+      <div class="card stat"><div class="label">PRs concluídas no período</div><div class="value">${completedCount}</div></div>
+      <div class="card stat"><div class="label">PRs abandonadas no período</div><div class="value">${abandonedCount}</div></div>
+      <div class="card stat"><div class="label">Tempo médio de aprovação</div><div class="value">${approvalDisplay}<span style="font-size:14px"> horas</span></div></div>
+    `
+  }
+
+  function renderOpenPrsList(activePrs) {
+    const container = document.getElementById('open-prs-list')
+    const sorted = activePrs
+      .slice()
+      .sort((a, b) => new Date(a.creationDate) - new Date(b.creationDate))
+      .slice(0, 30)
+
+    if (!sorted.length) {
+      container.innerHTML = '<p class="muted">Nenhuma PR aberta nos repositórios selecionados.</p>'
+      return
+    }
+
+    const now = new Date()
+    const body = sorted.map(p => {
+      const url = buildPrUrl(p)
+      return `
+        <tr>
+          <td>#${p.pullRequestId}</td>
+          <td><a href="${url}" target="_blank" rel="noopener">${escapeHtml(p.title || '(sem título)')}</a></td>
+          <td>${escapeHtml(p.repository?.name || '—')}</td>
+          <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
+          <td>${formatOpenDuration(p.creationDate, now)}</td>
+        </tr>`
+    }).join('')
+
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    `
+  }
+
+  async function loadData() {
+    const status = document.getElementById('global-status')
+    status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
+    try {
+      const [active, completed, abandoned] = await Promise.all([
+        listPullRequests({ status: 'active', top: 500 }),
+        listPullRequests({ status: 'completed', top: 500 }),
+        listPullRequests({ status: 'abandoned', top: 500 }),
+      ])
+
+      const activeByRepo = filterByRepo(active)
+      const completedFiltered = filterByDate(filterByRepo(completed))
+      const abandonedFiltered = filterByDate(filterByRepo(abandoned))
+
+      const allDateFiltered = [...completedFiltered, ...abandonedFiltered]
+      const approval = avgApprovalTime(allDateFiltered)
+
+      renderKpis(completedFiltered.length, abandonedFiltered.length, approval)
+      renderOpenPrsList(activeByRepo)
+
+      status.innerHTML = ''
+    } catch (e) {
+      console.error(e)
+      showError('global-status', `Erro ao carregar dados: ${e.message}`)
+    }
+  }
+
+  async function init() {
+    initDates()
+    await loadRepos()
+    loadData()
+  }
+
+  init()
+</script>
+</body>
+</html>

@@ -40,7 +40,7 @@ Depois abra `http://localhost:8080/index.html` e navegue até `config.html` para
 2. Preencha **Organização** (ex.: `minha-empresa`), **Projeto** (ex.: `meu-projeto`) e **PAT**.
 3. Clique em **Testar conexão**.
 4. Clique em **Salvar**.
-5. Acesse **Time** ou **Desenvolvedor** no menu.
+5. Acesse **Time**, **Desenvolvedor** ou **Code Review** no menu.
 
 ## Como gerar o PAT
 
@@ -62,6 +62,7 @@ index.html              # menu de navegação
 config.html             # tela de configuração (PAT, org, projeto, teste)
 dashboard.html          # visão do time (velocity, cycle time, work items, reviews)
 developer.html          # visão individual (commits, PRs, reviews, work items)
+codereview.html         # dashboard de code review (PRs por repositório, KPIs, PRs abertas)
 
 css/
   main.css              # variáveis, tema claro/escuro, tipografia
@@ -72,7 +73,7 @@ js/
   cache.js              # cache em localStorage com TTL de 15 minutos
   api.js                # wrapper fetch para a API REST do Azure DevOps
   charts.js             # helpers de inicialização do Chart.js
-  ui.js                 # topbar, tema, utilitários de DOM/datas
+  ui.js                 # topbar, tema, utilitários de DOM/datas, buildPrUrl, formatOpenDuration
   modules/
     commits.js          # commits e PRs por autor
     velocity.js         # velocity e burnup por sprint
@@ -85,7 +86,8 @@ js/
 
 ### Time (`dashboard.html`)
 - Commits por dia no período
-- Status das PRs (ativas, concluídas, abandonadas)
+- PRs abertas (filtradas pelo ano atual, ordenadas por tempo de espera)
+- Tempo médio de aprovação de PRs em horas (KPI)
 - Velocity por sprint (planejado vs. entregue em story points)
 - Burnup acumulado
 - Cycle time com linha de tendência (scatter)
@@ -93,6 +95,14 @@ js/
 - Backlog health: items sem estimativa, sem responsável
 - Ranking por autor: commits + PRs + taxa de aprovação
 - Revisões de código: aprovações, rejeições, comentários, tempo de resposta
+
+### Code Review (`codereview.html`)
+- Seleção de repositórios monitorados (persistida em `localStorage`)
+- Filtro por intervalo de datas (início e fim)
+- PRs concluídas no período (por repositório selecionado)
+- PRs abandonadas no período (por repositório selecionado)
+- Tempo médio de aprovação em horas
+- Listagem de PRs abertas com link direto, ordenada pelo maior tempo de espera
 
 ### Desenvolvedor (`developer.html`)
 - KPIs de commits, PRs, revisões e work items
@@ -105,9 +115,11 @@ js/
 
 ## Filtros
 
-- **Período**: últimos 7, 30 ou 90 dias (afeta commits, PRs, cycle time, work items)
-- **Time**: seleção de time quando o projeto tem múltiplos (dashboard.html)
-- **Desenvolvedor**: dropdown populado a partir dos PRs e work items recentes (developer.html)
+- **Período**: últimos 7, 30 ou 90 dias (afeta commits, PRs, cycle time, work items) — `dashboard.html`
+- **Intervalo de datas**: data início e data fim — `codereview.html`
+- **Repositórios**: seleção de quais repos monitorar, salva em `localStorage` — `codereview.html`
+- **Time**: seleção de time quando o projeto tem múltiplos — `dashboard.html`
+- **Desenvolvedor**: dropdown populado a partir dos PRs e work items recentes — `developer.html`
 
 ## Tema
 

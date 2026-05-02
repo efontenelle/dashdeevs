@@ -40,10 +40,18 @@
 
   <div class="card" style="margin-top: 16px;">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <h2>Repositórios monitorados</h2>
-      <button id="toggle-all-repos">Marcar/Desmarcar todos</button>
+      <h2>Repositórios monitorados (<span id="repo-count">0</span>)</h2>
+      <button id="toggle-repos-panel">&#9660; Expandir</button>
     </div>
-    <div id="repo-checkboxes" style="display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px;"></div>
+    <div id="repos-panel" style="display: none;">
+      <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+        <button id="toggle-all-repos">Marcar/Desmarcar todos</button>
+      </div>
+      <div id="repo-checkboxes" style="display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px;"></div>
+      <div style="margin-top: 8px; text-align: right;">
+        <button id="collapse-repos-panel">&#9650; Recolher</button>
+      </div>
+    </div>
   </div>
 
   <div class="grid grid-3" id="kpi-row" style="margin-top: 16px;"></div>
@@ -90,6 +98,10 @@
     if (e) { state.endDate = new Date(e + 'T23:59:59') }
   }
 
+  function updateRepoCount() {
+    document.getElementById('repo-count').textContent = state.selectedRepos.size
+  }
+
   function saveSelectedRepos() {
     localStorage.setItem(REPO_STORAGE_KEY, JSON.stringify([...state.selectedRepos]))
   }
@@ -121,11 +133,14 @@
       </label>`
     }).join('')
 
+    updateRepoCount()
+
     container.addEventListener('change', (e) => {
       const cb = e.target.closest('input[data-repo-id]')
       if (!cb) return
       if (cb.checked) state.selectedRepos.add(cb.dataset.repoId)
       else state.selectedRepos.delete(cb.dataset.repoId)
+      updateRepoCount()
       saveSelectedRepos()
       loadData()
     })
@@ -141,8 +156,19 @@
       state.allRepos.forEach(r => state.selectedRepos.add(r.id))
       checkboxes.forEach(cb => cb.checked = true)
     }
+    updateRepoCount()
     saveSelectedRepos()
     loadData()
+  })
+
+  document.getElementById('toggle-repos-panel').addEventListener('click', () => {
+    document.getElementById('repos-panel').style.display = 'block'
+    document.getElementById('toggle-repos-panel').style.display = 'none'
+  })
+
+  document.getElementById('collapse-repos-panel').addEventListener('click', () => {
+    document.getElementById('repos-panel').style.display = 'none'
+    document.getElementById('toggle-repos-panel').style.display = ''
   })
 
   document.getElementById('apply-btn').addEventListener('click', () => {

@@ -75,6 +75,11 @@
     <div class="card-header"><h2>Ranking de Revisores</h2></div>
     <div id="reviewer-ranking"></div>
   </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>Ranking de PRs por Autor</h2></div>
+    <div id="author-ranking"></div>
+  </div>
 </main>
 
 <script type="module">
@@ -82,7 +87,7 @@
   import { createChart } from './js/charts.js'
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
-  import { avgApprovalTime } from './js/modules/commits.js'
+  import { avgApprovalTime, prAuthorRanking } from './js/modules/commits.js'
   import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
 
   renderTopbar('codereview')
@@ -330,6 +335,31 @@
     `
   }
 
+  function renderAuthorRanking(completedPrs, abandonedPrs, activePrs) {
+    const container = document.getElementById('author-ranking')
+    const rows = prAuthorRanking(completedPrs, abandonedPrs, activePrs)
+    if (!rows.length) {
+      container.innerHTML = '<p class="muted">Nenhum autor encontrado no período.</p>'
+      return
+    }
+    const body = rows.map(r => {
+      const avg = r.avgApprovalHours != null ? r.avgApprovalHours.toFixed(1) + ' h' : '—'
+      return `<tr>
+        <td>${escapeHtml(r.author)}</td>
+        <td>${r.completed}</td>
+        <td>${r.open}</td>
+        <td>${r.abandoned}</td>
+        <td>${avg}</td>
+      </tr>`
+    }).join('')
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>Autor</th><th>PRs concluídas</th><th>PRs abertas</th><th>PRs abandonadas</th><th>Tempo médio de aprovação</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    `
+  }
+
   function renderReviewerRanking(prs) {
     const container = document.getElementById('reviewer-ranking')
     const stats = reviewStatsByReviewer(prs)
@@ -378,6 +408,7 @@
       renderTrendChart(completedFiltered)
       renderOpenPrsList(activeByRepo)
       renderReviewerRanking(allDateFiltered)
+      renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo)
 
       status.innerHTML = ''
     } catch (e) {

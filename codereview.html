@@ -251,7 +251,7 @@
         listPullRequests({ status: 'abandoned', top: 500 }),
       ])
 
-      const activeByRepo = filterByRepo(active)
+      const activeByRepo = filterByRepo(active.filter(pr => !pr.isDraft))
       const completedFiltered = filterByDate(filterByRepo(completed))
       const abandonedFiltered = filterByDate(filterByRepo(abandoned))
 

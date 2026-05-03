@@ -208,9 +208,9 @@
 
   function prStaleBadge(creationDate, now) {
     const days = (now - new Date(creationDate)) / 86400000
-    if (days < 1)  return '<span class="badge success">🟢 &lt;1 dia</span>'
-    if (days <= 2) return '<span class="badge warning">🟡 1–2 dias</span>'
-    return '<span class="badge danger">🔴 &gt;3 dias</span>'
+    if (days < 1)  return '<span class="badge success">🟢</span>'
+    if (days <= 2) return '<span class="badge warning">🟡</span>'
+    return '<span class="badge danger">🔴</span>'
   }
 
   function filterByDate(prs) {

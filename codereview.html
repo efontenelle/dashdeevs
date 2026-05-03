@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="css/components.css">
 <script src="js/file-guard.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <header class="topbar"></header>
@@ -56,6 +57,11 @@
 
   <div class="grid grid-4" id="kpi-row" style="margin-top: 16px;"></div>
 
+  <div class="card" id="trend-card" style="margin-top: 16px; display:none;">
+    <div class="card-header"><h2>Tendência — PRs concluídas por semana</h2></div>
+    <canvas id="trend-chart"></canvas>
+  </div>
+
   <div class="card" style="margin-top: 16px;">
     <div class="card-header"><h2>PRs abertas</h2></div>
     <p class="muted" style="margin-top: 4px;">Ordenadas pelo maior tempo de espera. O filtro de data não se aplica a esta lista.</p>
@@ -68,6 +74,7 @@
 
 <script type="module">
   import { renderTopbar, requireConfigOrRedirect, escapeHtml, showError, formatOpenDuration, buildPrUrl } from './js/ui.js'
+  import { createChart } from './js/charts.js'
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
   import { avgApprovalTime } from './js/modules/commits.js'
@@ -201,6 +208,56 @@
     renderOpenPrsList(state.lastActivePrs)
   })
 
+  function bucketByWeek(prs, startDate, endDate) {
+    const start = new Date(startDate)
+    const day = start.getDay()
+    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1))
+    start.setHours(0, 0, 0, 0)
+
+    const labels = [], data = [], weekStarts = []
+    for (let d = new Date(start); d <= endDate; d.setDate(d.getDate() + 7)) {
+      weekStarts.push(new Date(d))
+      labels.push(d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }))
+      data.push(0)
+    }
+
+    for (const pr of prs) {
+      const closed = new Date(pr.closedDate)
+      for (let i = weekStarts.length - 1; i >= 0; i--) {
+        if (closed >= weekStarts[i]) { data[i]++; break }
+      }
+    }
+
+    return { labels, data }
+  }
+
+  function renderTrendChart(completedPrs) {
+    const card = document.getElementById('trend-card')
+    const { labels, data } = bucketByWeek(completedPrs, state.startDate, state.endDate)
+    if (!labels.length) { card.style.display = 'none'; return }
+    card.style.display = ''
+    createChart(document.getElementById('trend-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'PRs concluídas',
+          data,
+          tension: 0.3,
+          fill: true,
+          backgroundColor: 'rgba(9,105,218,0.08)',
+          borderColor: '#2f81f7',
+          pointRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      }
+    })
+  }
+
   function filterByRepo(prs) {
     if (!state.selectedRepos.size) return []
     return prs.filter(pr => state.selectedRepos.has(pr.repository?.id))
@@ -289,6 +346,7 @@
 
       state.lastActivePrs = activeByRepo
       renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview)
+      renderTrendChart(completedFiltered)
       renderOpenPrsList(activeByRepo)
 
       status.innerHTML = ''

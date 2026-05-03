@@ -54,7 +54,7 @@
     </div>
   </div>
 
-  <div class="grid grid-3" id="kpi-row" style="margin-top: 16px;"></div>
+  <div class="grid grid-4" id="kpi-row" style="margin-top: 16px;"></div>
 
   <div class="card" style="margin-top: 16px;">
     <div class="card-header"><h2>PRs abertas</h2></div>
@@ -68,6 +68,7 @@
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
   import { avgApprovalTime } from './js/modules/commits.js'
+  import { avgTimeToFirstReview } from './js/modules/reviews.js'
 
   renderTopbar('codereview')
   if (!requireConfigOrRedirect()) throw new Error('redirecting')
@@ -199,12 +200,14 @@
     })
   }
 
-  function renderKpis(completedCount, abandonedCount, avgApproval) {
+  function renderKpis(completedCount, abandonedCount, avgApproval, avgFirstReview) {
     const approvalDisplay = avgApproval != null ? avgApproval.toFixed(1) : '—'
+    const firstReviewDisplay = avgFirstReview != null ? avgFirstReview.toFixed(1) : '—'
     document.getElementById('kpi-row').innerHTML = `
       <div class="card stat"><div class="label">PRs concluídas no período</div><div class="value">${completedCount}</div></div>
       <div class="card stat"><div class="label">PRs abandonadas no período</div><div class="value">${abandonedCount}</div></div>
       <div class="card stat"><div class="label">Tempo médio de aprovação</div><div class="value">${approvalDisplay}<span style="font-size:14px"> horas</span></div></div>
+      <div class="card stat"><div class="label">Tempo médio até 1ª revisão</div><div class="value">${firstReviewDisplay}<span style="font-size:14px"> horas</span></div></div>
     `
   }
 
@@ -256,9 +259,12 @@
       const abandonedFiltered = filterByDate(filterByRepo(abandoned))
 
       const allDateFiltered = [...completedFiltered, ...abandonedFiltered]
-      const approval = avgApprovalTime(allDateFiltered)
+      const [approval, firstReview] = await Promise.all([
+        Promise.resolve(avgApprovalTime(allDateFiltered)),
+        avgTimeToFirstReview(allDateFiltered),
+      ])
 
-      renderKpis(completedFiltered.length, abandonedFiltered.length, approval)
+      renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview)
       renderOpenPrsList(activeByRepo)
 
       status.innerHTML = ''

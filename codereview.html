@@ -70,6 +70,11 @@
     </div>
     <div id="open-prs-list"></div>
   </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header"><h2>Ranking de Revisores</h2></div>
+    <div id="reviewer-ranking"></div>
+  </div>
 </main>
 
 <script type="module">
@@ -78,7 +83,7 @@
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
   import { avgApprovalTime } from './js/modules/commits.js'
-  import { avgTimeToFirstReview } from './js/modules/reviews.js'
+  import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
 
   renderTopbar('codereview')
   if (!requireConfigOrRedirect()) throw new Error('redirecting')
@@ -325,6 +330,29 @@
     `
   }
 
+  function renderReviewerRanking(prs) {
+    const container = document.getElementById('reviewer-ranking')
+    const stats = reviewStatsByReviewer(prs)
+    if (!stats.length) {
+      container.innerHTML = '<p class="muted">Nenhum revisor encontrado no período.</p>'
+      return
+    }
+    const rows = stats.map(s => {
+      const rate = s.reviews > 0 ? (s.approved / s.reviews * 100).toFixed(1) + '%' : '—'
+      return `<tr>
+        <td>${escapeHtml(s.reviewer)}</td>
+        <td>${s.reviews}</td>
+        <td>${rate}</td>
+      </tr>`
+    }).join('')
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>Revisor</th><th>PRs revisadas</th><th>Taxa de aprovação</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `
+  }
+
   async function loadData() {
     const status = document.getElementById('global-status')
     status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
@@ -349,6 +377,7 @@
       renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview)
       renderTrendChart(completedFiltered)
       renderOpenPrsList(activeByRepo)
+      renderReviewerRanking(allDateFiltered)
 
       status.innerHTML = ''
     } catch (e) {

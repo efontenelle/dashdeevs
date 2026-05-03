@@ -59,6 +59,9 @@
   <div class="card" style="margin-top: 16px;">
     <div class="card-header"><h2>PRs abertas</h2></div>
     <p class="muted" style="margin-top: 4px;">Ordenadas pelo maior tempo de espera. O filtro de data não se aplica a esta lista.</p>
+    <div style="margin: 8px 0;">
+      <button id="toggle-critical-btn">Mostrar apenas PRs críticas (&gt;3 dias)</button>
+    </div>
     <div id="open-prs-list"></div>
   </div>
 </main>
@@ -80,6 +83,8 @@
     endDate: null,
     selectedRepos: new Set(),
     allRepos: [],
+    lastActivePrs: [],
+    showOnlyCritical: false,
   }
 
   function initDates() {
@@ -188,9 +193,24 @@
     alert('Cache limpo.')
   })
 
+  document.getElementById('toggle-critical-btn').addEventListener('click', () => {
+    state.showOnlyCritical = !state.showOnlyCritical
+    document.getElementById('toggle-critical-btn').textContent = state.showOnlyCritical
+      ? 'Mostrar todas as PRs'
+      : 'Mostrar apenas PRs críticas (>3 dias)'
+    renderOpenPrsList(state.lastActivePrs)
+  })
+
   function filterByRepo(prs) {
     if (!state.selectedRepos.size) return []
     return prs.filter(pr => state.selectedRepos.has(pr.repository?.id))
+  }
+
+  function prStaleBadge(creationDate, now) {
+    const days = (now - new Date(creationDate)) / 86400000
+    if (days < 1)  return '<span class="badge success">&#60;&nbsp;1 dia</span>'
+    if (days <= 2) return '<span class="badge warning">1–2 dias</span>'
+    return '<span class="badge danger">&#62;&nbsp;3 dias</span>'
   }
 
   function filterByDate(prs) {
@@ -213,17 +233,19 @@
 
   function renderOpenPrsList(activePrs) {
     const container = document.getElementById('open-prs-list')
-    const sorted = activePrs
-      .slice()
-      .sort((a, b) => new Date(a.creationDate) - new Date(b.creationDate))
-      .slice(0, 30)
+    const now = new Date()
+
+    let filtered = activePrs.slice().sort((a, b) => new Date(a.creationDate) - new Date(b.creationDate))
+    if (state.showOnlyCritical) {
+      filtered = filtered.filter(p => (now - new Date(p.creationDate)) / 86400000 > 3)
+    }
+    const sorted = filtered.slice(0, 30)
 
     if (!sorted.length) {
       container.innerHTML = '<p class="muted">Nenhuma PR aberta nos repositórios selecionados.</p>'
       return
     }
 
-    const now = new Date()
     const body = sorted.map(p => {
       const url = buildPrUrl(p)
       return `
@@ -233,12 +255,13 @@
           <td>${escapeHtml(p.repository?.name || '—')}</td>
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>
+          <td>${prStaleBadge(p.creationDate, now)}</td>
         </tr>`
     }).join('')
 
     container.innerHTML = `
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Status</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
@@ -264,6 +287,7 @@
         avgTimeToFirstReview(allDateFiltered),
       ])
 
+      state.lastActivePrs = activeByRepo
       renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview)
       renderOpenPrsList(activeByRepo)
 

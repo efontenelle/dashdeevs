@@ -61,6 +61,34 @@ export function reviewStatsByReviewer(prs) {
   return [...stats.values()].sort((a, b) => b.reviews - a.reviews)
 }
 
+export async function avgTimeToFirstReview(prs, { maxPrs = 50 } = {}) {
+  // Cap to avoid rate-limiting the threads API (one call per PR)
+  const subset = prs.slice(0, maxPrs)
+  const times = []
+  for (const pr of subset) {
+    if (!pr.repository?.id) continue
+    const authorId = pr.createdBy?.uniqueName
+    try {
+      const threads = await getPullRequestThreads(pr.repository.id, pr.pullRequestId)
+      let firstTs = null
+      for (const t of threads) {
+        for (const c of t.comments || []) {
+          if (c.author?.uniqueName === authorId) continue
+          const ts = c.publishedDate
+          if (ts && (!firstTs || ts < firstTs)) firstTs = ts
+        }
+      }
+      if (firstTs) {
+        const hours = (new Date(firstTs) - new Date(pr.creationDate)) / 3600000
+        if (hours >= 0 && hours < 24 * 30) times.push(hours)
+      }
+    } catch (e) {
+      console.warn(`Falha ao buscar threads do PR ${pr.pullRequestId}:`, e.message)
+    }
+  }
+  return times.length ? times.reduce((s, v) => s + v, 0) / times.length : null
+}
+
 export async function computeCommentStats(prs, { maxPrs = 40 } = {}) {
   // Limit: threads call is per-PR; we cap to avoid rate limiting
   const subset = prs.slice(0, maxPrs)

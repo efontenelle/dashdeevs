@@ -58,8 +58,13 @@
   <div class="grid grid-4" id="kpi-row" style="margin-top: 16px;"></div>
 
   <div class="card" id="trend-card" style="margin-top: 16px; display:none;">
-    <div class="card-header"><h2>Tendência — PRs concluídas por semana</h2></div>
-    <canvas id="trend-chart"></canvas>
+    <div class="card-header">
+      <h2>Tendência — PRs concluídas por semana</h2>
+      <button id="toggle-trend-btn">&#9658; Expandir</button>
+    </div>
+    <div id="trend-body" style="display:none;">
+      <canvas id="trend-chart"></canvas>
+    </div>
   </div>
 
   <div class="card" id="repo-pie-card" style="margin-top: 16px; display:none;">
@@ -311,6 +316,14 @@
       },
     })
   }
+
+  document.getElementById('toggle-trend-btn').addEventListener('click', () => {
+    const body = document.getElementById('trend-body')
+    const btn = document.getElementById('toggle-trend-btn')
+    const collapsed = body.style.display === 'none'
+    body.style.display = collapsed ? '' : 'none'
+    btn.innerHTML = collapsed ? '&#9660; Recolher' : '&#9658; Expandir'
+  })
 
   document.getElementById('toggle-repo-pie-btn').addEventListener('click', () => {
     const body = document.getElementById('repo-pie-body')

@@ -112,3 +112,33 @@ export function avgApprovalTime(prs) {
   const total = approved.reduce((sum, pr) => sum + daysBetween(pr.creationDate, pr.closedDate), 0)
   return (total / approved.length) * 24
 }
+
+export function prAuthorRanking(completedPrs, abandonedPrs, activePrs) {
+  const map = new Map()
+  const ensure = name => {
+    if (!map.has(name)) map.set(name, { author: name, completed: 0, open: 0, abandoned: 0, _approvalHours: [] })
+    return map.get(name)
+  }
+  for (const pr of completedPrs) {
+    const s = ensure(pr.createdBy?.displayName || 'Desconhecido')
+    s.completed++
+    if (pr.closedDate && (pr.reviewers || []).some(r => !r.isContainer && r.vote >= 5)) {
+      const hours = daysBetween(pr.creationDate, pr.closedDate) * 24
+      if (hours >= 0) s._approvalHours.push(hours)
+    }
+  }
+  for (const pr of abandonedPrs) ensure(pr.createdBy?.displayName || 'Desconhecido').abandoned++
+  for (const pr of activePrs)    ensure(pr.createdBy?.displayName || 'Desconhecido').open++
+
+  return [...map.values()]
+    .map(s => ({
+      author: s.author,
+      completed: s.completed,
+      open: s.open,
+      abandoned: s.abandoned,
+      avgApprovalHours: s._approvalHours.length
+        ? s._approvalHours.reduce((a, b) => a + b, 0) / s._approvalHours.length
+        : null,
+    }))
+    .sort((a, b) => b.completed - a.completed)
+}

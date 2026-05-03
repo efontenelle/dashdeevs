@@ -57,13 +57,17 @@
 
   <div class="grid grid-4" id="kpi-row" style="margin-top: 16px;"></div>
 
-  <div class="grid grid-2" id="charts-row" style="margin-top: 16px; display:none;">
-    <div class="card" id="trend-card">
-      <div class="card-header"><h2>Tendência — PRs concluídas por semana</h2></div>
-      <canvas id="trend-chart"></canvas>
+  <div class="card" id="trend-card" style="margin-top: 16px; display:none;">
+    <div class="card-header"><h2>Tendência — PRs concluídas por semana</h2></div>
+    <canvas id="trend-chart"></canvas>
+  </div>
+
+  <div class="card" id="repo-pie-card" style="margin-top: 16px; display:none;">
+    <div class="card-header">
+      <h2>PRs concluídas por repositório</h2>
+      <button id="toggle-repo-pie-btn">&#9658; Expandir</button>
     </div>
-    <div class="card" id="repo-pie-card">
-      <div class="card-header"><h2>PRs concluídas por repositório</h2></div>
+    <div id="repo-pie-body" style="display:none;">
       <canvas id="prs-by-repo-chart"></canvas>
     </div>
   </div>
@@ -261,10 +265,10 @@
   }
 
   function renderTrendChart(completedPrs) {
-    const row = document.getElementById('charts-row')
+    const card = document.getElementById('trend-card')
     const { labels, data } = bucketByWeek(completedPrs, state.startDate, state.endDate)
-    if (!labels.length) { row.style.display = 'none'; return }
-    row.style.display = ''
+    if (!labels.length) { card.style.display = 'none'; return }
+    card.style.display = ''
     createChart(document.getElementById('trend-chart'), {
       type: 'line',
       data: {
@@ -289,7 +293,10 @@
   }
 
   function renderRepoPieChart(completedPrs) {
+    const card = document.getElementById('repo-pie-card')
     const { labels, data } = countByRepository(completedPrs)
+    if (!labels.length) { card.style.display = 'none'; return }
+    card.style.display = ''
     createChart(document.getElementById('prs-by-repo-chart'), {
       type: 'pie',
       data: {
@@ -303,6 +310,14 @@
       },
     })
   }
+
+  document.getElementById('toggle-repo-pie-btn').addEventListener('click', () => {
+    const body = document.getElementById('repo-pie-body')
+    const btn = document.getElementById('toggle-repo-pie-btn')
+    const collapsed = body.style.display === 'none'
+    body.style.display = collapsed ? '' : 'none'
+    btn.innerHTML = collapsed ? '&#9660; Recolher' : '&#9658; Expandir'
+  })
 
   function filterByRepo(prs) {
     if (!state.selectedRepos.size) return []

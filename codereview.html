@@ -391,14 +391,14 @@
           <td>${escapeHtml(p.repository?.name || '—')}</td>
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>
-          <td>${prStaleBadge(p.creationDate, now)}</td>
           <td>${fileCount}</td>
+          <td>${prStaleBadge(p.creationDate, now)}</td>
         </tr>`
     }).join('')
 
     container.innerHTML = `
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Status</th><th>Arquivos</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Arquivos</th><th>Status</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `

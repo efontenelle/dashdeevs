@@ -93,6 +93,19 @@ export async function getPullRequestThreads(repoId, prId) {
   return data.value || []
 }
 
+export async function getPullRequestIterations(repoId, prId) {
+  const data = await get(`/_apis/git/repositories/${repoId}/pullRequests/${prId}/iterations`)
+  return data.value || []
+}
+
+export async function getPullRequestIterationChanges(repoId, prId, iterationId) {
+  const data = await get(
+    `/_apis/git/repositories/${repoId}/pullRequests/${prId}/iterations/${iterationId}/changes`,
+    { '$top': 1000 }
+  )
+  return data.changeEntries || []
+}
+
 export async function listIterations(team) {
   const scope = team ? `/${encodeURIComponent(team)}` : ''
   const data = await get(`${scope}/_apis/work/teamsettings/iterations`)

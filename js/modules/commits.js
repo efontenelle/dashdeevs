@@ -102,6 +102,30 @@ export async function loadOpenPullRequests({ team } = {}) {
   return thisYear.filter(pr => prCreatorMatchesTeam(pr, memberSet))
 }
 
+export async function fetchFileCounts(prs, { maxPrs = 50 } = {}) {
+  const subset = prs.slice(0, maxPrs)
+  const map = new Map()
+  for (const pr of subset) {
+    if (!pr.repository?.id) continue
+    try {
+      const iterations = await getPullRequestIterations(pr.repository.id, pr.pullRequestId)
+      if (!iterations.length) continue
+      const latest = iterations[iterations.length - 1]
+      const changes = await getPullRequestIterationChanges(pr.repository.id, pr.pullRequestId, latest.id)
+      const paths = new Set()
+      for (const c of changes) {
+        if (c.item?.gitObjectType && c.item.gitObjectType !== 'blob') continue
+        const p = c.item?.path
+        if (p) paths.add(p)
+      }
+      map.set(pr.pullRequestId, paths.size)
+    } catch (e) {
+      console.warn(`Falha ao buscar iterations do PR ${pr.pullRequestId}:`, e.message)
+    }
+  }
+  return map
+}
+
 export function avgApprovalTime(prs) {
   const approved = prs.filter(pr =>
     pr.status === 'completed' &&

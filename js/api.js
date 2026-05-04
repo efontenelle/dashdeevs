@@ -60,7 +60,7 @@ export async function listProjects() {
 
 export async function listRepositories() {
   const data = await get('/_apis/git/repositories', {})
-  return data.value || []
+  return (data.value || []).filter(r => !r.isDisabled)
 }
 
 export async function listCommits(repoId, { fromDate, toDate, author, top = 1000 } = {}) {

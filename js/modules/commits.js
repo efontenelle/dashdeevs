@@ -1,4 +1,4 @@
-import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet } from '../api.js'
+import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet, getPullRequestIterations, getPullRequestIterationChanges } from '../api.js'
 import { daysAgoIso, bucketByDay, groupBy, daysBetween } from '../ui.js'
 
 function norm(s) {
@@ -141,4 +141,28 @@ export function prAuthorRanking(completedPrs, abandonedPrs, activePrs) {
         : null,
     }))
     .sort((a, b) => b.completed - a.completed)
+}
+
+export async function avgFilesPerPr(prs, { maxPrs = 50 } = {}) {
+  const subset = prs.slice(0, maxPrs)
+  const counts = []
+  for (const pr of subset) {
+    if (!pr.repository?.id) continue
+    try {
+      const iterations = await getPullRequestIterations(pr.repository.id, pr.pullRequestId)
+      if (!iterations.length) continue
+      const latest = iterations[iterations.length - 1]
+      const changes = await getPullRequestIterationChanges(pr.repository.id, pr.pullRequestId, latest.id)
+      const paths = new Set()
+      for (const c of changes) {
+        if (c.item?.gitObjectType && c.item.gitObjectType !== 'blob') continue
+        const p = c.item?.path
+        if (p) paths.add(p)
+      }
+      counts.push(paths.size)
+    } catch (e) {
+      console.warn(`Falha ao buscar iterations do PR ${pr.pullRequestId}:`, e.message)
+    }
+  }
+  return counts.length ? counts.reduce((s, v) => s + v, 0) / counts.length : null
 }

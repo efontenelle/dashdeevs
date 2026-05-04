@@ -55,7 +55,7 @@
     </div>
   </div>
 
-  <div class="grid grid-4" id="kpi-row" style="margin-top: 16px;"></div>
+  <div class="grid grid-5" id="kpi-row" style="margin-top: 16px;"></div>
 
   <div class="card" id="trend-card" style="margin-top: 16px; display:none;">
     <div class="card-header">
@@ -102,7 +102,7 @@
   import { createChart, PALETTE } from './js/charts.js'
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
-  import { avgApprovalTime, prAuthorRanking } from './js/modules/commits.js'
+  import { avgApprovalTime, prAuthorRanking, avgFilesPerPr } from './js/modules/commits.js'
   import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
 
   renderTopbar('codereview')
@@ -352,14 +352,16 @@
     })
   }
 
-  function renderKpis(completedCount, abandonedCount, avgApproval, avgFirstReview) {
+  function renderKpis(completedCount, abandonedCount, avgApproval, avgFirstReview, avgFiles) {
     const approvalDisplay = avgApproval != null ? avgApproval.toFixed(1) : '—'
     const firstReviewDisplay = avgFirstReview != null ? avgFirstReview.toFixed(1) : '—'
+    const filesDisplay = avgFiles != null ? avgFiles.toFixed(1) : '—'
     document.getElementById('kpi-row').innerHTML = `
       <div class="card stat"><div class="label">PRs concluídas no período</div><div class="value">${completedCount}</div></div>
       <div class="card stat"><div class="label">PRs abandonadas no período</div><div class="value">${abandonedCount}</div></div>
       <div class="card stat"><div class="label">Tempo médio de aprovação</div><div class="value">${approvalDisplay}<span style="font-size:14px"> horas</span></div></div>
       <div class="card stat"><div class="label">Tempo médio até 1ª revisão</div><div class="value">${firstReviewDisplay}<span style="font-size:14px"> horas</span></div></div>
+      <div class="card stat"><div class="label">Arquivos alterados por PR (média)</div><div class="value">${filesDisplay}</div></div>
     `
   }
 
@@ -462,13 +464,14 @@
       const abandonedFiltered = filterByDate(filterByRepo(abandoned))
 
       const allDateFiltered = [...completedFiltered, ...abandonedFiltered]
-      const [approval, firstReview] = await Promise.all([
+      const [approval, firstReview, avgFiles] = await Promise.all([
         Promise.resolve(avgApprovalTime(allDateFiltered)),
         avgTimeToFirstReview(allDateFiltered),
+        avgFilesPerPr(allDateFiltered),
       ])
 
       state.lastActivePrs = activeByRepo
-      renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview)
+      renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles)
       renderTrendChart(completedFiltered)
       renderRepoPieChart(completedFiltered)
       renderOpenPrsList(activeByRepo)

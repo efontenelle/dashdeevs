@@ -102,7 +102,7 @@
   import { createChart, PALETTE } from './js/charts.js'
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
-  import { avgApprovalTime, prAuthorRanking, avgFilesPerPr } from './js/modules/commits.js'
+  import { avgApprovalTime, prAuthorRanking, avgFilesPerPr, fetchFileCounts } from './js/modules/commits.js'
   import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
 
   renderTopbar('codereview')
@@ -116,6 +116,7 @@
     selectedRepos: new Set(),
     allRepos: [],
     lastActivePrs: [],
+    lastOpenPrFileCounts: new Map(),
     showOnlyCritical: false,
   }
 
@@ -230,7 +231,7 @@
     document.getElementById('toggle-critical-btn').textContent = state.showOnlyCritical
       ? 'Mostrar todas as PRs'
       : 'Mostrar apenas PRs críticas (>3 dias)'
-    renderOpenPrsList(state.lastActivePrs)
+    renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts)
   })
 
   function bucketByWeek(prs, startDate, endDate) {
@@ -365,7 +366,7 @@
     `
   }
 
-  function renderOpenPrsList(activePrs) {
+  function renderOpenPrsList(activePrs, fileCountMap = null) {
     const container = document.getElementById('open-prs-list')
     const now = new Date()
 
@@ -382,6 +383,7 @@
 
     const body = sorted.map(p => {
       const url = buildPrUrl(p)
+      const fileCount = fileCountMap?.get(p.pullRequestId) ?? '—'
       return `
         <tr>
           <td>#${p.pullRequestId}</td>
@@ -390,37 +392,55 @@
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>
           <td>${prStaleBadge(p.creationDate, now)}</td>
+          <td>${fileCount}</td>
         </tr>`
     }).join('')
 
     container.innerHTML = `
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Status</th><th>Arquivos</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
   }
 
-  function renderAuthorRanking(completedPrs, abandonedPrs, activePrs) {
+  function renderAuthorRanking(completedPrs, abandonedPrs, activePrs, fileCountMap = null) {
     const container = document.getElementById('author-ranking')
     const rows = prAuthorRanking(completedPrs, abandonedPrs, activePrs)
     if (!rows.length) {
       container.innerHTML = '<p class="muted">Nenhum autor encontrado no período.</p>'
       return
     }
+
+    const authorFileCounts = new Map()
+    if (fileCountMap) {
+      for (const pr of [...completedPrs, ...abandonedPrs]) {
+        const count = fileCountMap.get(pr.pullRequestId)
+        if (count == null) continue
+        const author = pr.createdBy?.displayName || 'Desconhecido'
+        if (!authorFileCounts.has(author)) authorFileCounts.set(author, [])
+        authorFileCounts.get(author).push(count)
+      }
+    }
+
     const body = rows.map(r => {
       const avg = r.avgApprovalHours != null ? r.avgApprovalHours.toFixed(1) + ' h' : '—'
+      const fileCounts = authorFileCounts.get(r.author)
+      const avgFiles = fileCounts?.length
+        ? (fileCounts.reduce((a, b) => a + b, 0) / fileCounts.length).toFixed(1)
+        : '—'
       return `<tr>
         <td>${escapeHtml(r.author)}</td>
         <td>${r.completed}</td>
         <td>${r.open}</td>
         <td>${r.abandoned}</td>
         <td>${avg}</td>
+        <td>${avgFiles}</td>
       </tr>`
     }).join('')
     container.innerHTML = `
       <table>
-        <thead><tr><th>Autor</th><th>PRs concluídas</th><th>PRs abertas</th><th>PRs abandonadas</th><th>Tempo médio de aprovação</th></tr></thead>
+        <thead><tr><th>Autor</th><th>PRs concluídas</th><th>PRs abertas</th><th>PRs abandonadas</th><th>Tempo médio de aprovação</th><th>Média de arquivos</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
@@ -471,12 +491,22 @@
       ])
 
       state.lastActivePrs = activeByRepo
+      state.lastOpenPrFileCounts = new Map()
       renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles)
       renderTrendChart(completedFiltered)
       renderRepoPieChart(completedFiltered)
-      renderOpenPrsList(activeByRepo)
+      renderOpenPrsList(activeByRepo, null)
       renderReviewerRanking(allDateFiltered)
-      renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo)
+      renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, null)
+
+      fetchFileCounts(activeByRepo.slice(0, 30), { maxPrs: 30 }).then(map => {
+        state.lastOpenPrFileCounts = map
+        renderOpenPrsList(state.lastActivePrs, map)
+      })
+
+      fetchFileCounts([...completedFiltered, ...abandonedFiltered], { maxPrs: 50 }).then(map => {
+        renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, map)
+      })
 
       status.innerHTML = ''
     } catch (e) {

@@ -57,6 +57,21 @@
 
   <div class="grid grid-5" id="kpi-row" style="margin-top: 16px;"></div>
 
+  <div class="card" id="build-card" style="margin-top: 16px; display:none;">
+    <div class="card-header" style="margin-bottom: 8px;">
+      <h2>Build & CI</h2>
+      <button id="toggle-build-btn">&#9658; Expandir</button>
+    </div>
+    <div id="build-body" style="display:none;">
+      <div class="grid grid-3" style="margin-bottom: 16px;">
+        <div class="card stat" id="kpi-build-count"></div>
+        <div class="card stat" id="kpi-build-time"></div>
+        <div class="card stat" id="kpi-build-success"></div>
+      </div>
+      <canvas id="build-trend-chart"></canvas>
+    </div>
+  </div>
+
   <div class="card" id="trend-card" style="margin-top: 16px; display:none;">
     <div class="card-header">
       <h2>Tendência — PRs concluídas por semana</h2>
@@ -104,6 +119,7 @@
   import { listRepositories, listPullRequests } from './js/api.js'
   import { avgApprovalTime, prAuthorRanking, avgFilesPerPr, fetchFileCounts } from './js/modules/commits.js'
   import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
+  import { loadPRBuilds, buildMetrics, buildsByPrNumber, prLastBuildSummary, buildTrendByWeek, formatBuildDuration } from './js/modules/builds.js'
 
   renderTopbar('codereview')
   if (!requireConfigOrRedirect()) throw new Error('redirecting')
@@ -117,6 +133,7 @@
     allRepos: [],
     lastActivePrs: [],
     lastOpenPrFileCounts: new Map(),
+    lastBuildsByPr: new Map(),
     showOnlyCritical: false,
   }
 
@@ -231,7 +248,7 @@
     document.getElementById('toggle-critical-btn').textContent = state.showOnlyCritical
       ? 'Mostrar todas as PRs'
       : 'Mostrar apenas PRs críticas (>3 dias)'
-    renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts)
+    renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts, state.lastBuildsByPr)
   })
 
   function bucketByWeek(prs, startDate, endDate) {
@@ -318,6 +335,14 @@
     })
   }
 
+  document.getElementById('toggle-build-btn').addEventListener('click', () => {
+    const body = document.getElementById('build-body')
+    const btn = document.getElementById('toggle-build-btn')
+    const collapsed = body.style.display === 'none'
+    body.style.display = collapsed ? '' : 'none'
+    btn.innerHTML = collapsed ? '&#9660; Recolher' : '&#9658; Expandir'
+  })
+
   document.getElementById('toggle-trend-btn').addEventListener('click', () => {
     const body = document.getElementById('trend-body')
     const btn = document.getElementById('toggle-trend-btn')
@@ -333,6 +358,54 @@
     body.style.display = collapsed ? '' : 'none'
     btn.innerHTML = collapsed ? '&#9660; Recolher' : '&#9658; Expandir'
   })
+
+  function buildResultBadge(summary) {
+    if (!summary) return '—'
+    const dur = formatBuildDuration(summary.durationMinutes)
+    if (summary.result === 'inProgress') return `<span class="badge primary">⟳ em execução</span>`
+    if (summary.result === 'succeeded') return `<span class="badge success">✓ ${dur}</span>`
+    if (summary.result === 'partiallySucceeded') return `<span class="badge warning">~ ${dur}</span>`
+    if (summary.result === 'failed') return `<span class="badge danger">✗ ${dur}</span>`
+    return `<span class="badge">${dur}</span>`
+  }
+
+  function renderBuildCard(builds) {
+    const card = document.getElementById('build-card')
+    if (!builds.length) { card.style.display = 'none'; return }
+    card.style.display = ''
+
+    const { avgDurationMinutes, successRate, total } = buildMetrics(builds)
+    document.getElementById('kpi-build-count').innerHTML =
+      `<div class="label">Execuções de build no período</div><div class="value">${total}</div>`
+    document.getElementById('kpi-build-time').innerHTML =
+      `<div class="label">Tempo médio de build</div><div class="value">${formatBuildDuration(avgDurationMinutes)}</div>`
+    document.getElementById('kpi-build-success').innerHTML =
+      `<div class="label">Taxa de sucesso</div><div class="value">${successRate != null ? successRate.toFixed(1) + '<span style="font-size:14px">%</span>' : '—'}</div>`
+
+    const { labels, data } = buildTrendByWeek(builds, state.startDate, state.endDate)
+    createChart(document.getElementById('build-trend-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Tempo médio de build (min)',
+          data,
+          tension: 0.3,
+          fill: true,
+          backgroundColor: 'rgba(26,127,55,0.08)',
+          borderColor: '#3fb950',
+          pointRadius: 4,
+          spanGaps: true,
+        }]
+      },
+      options: {
+        responsive: true,
+        aspectRatio: 6,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, title: { display: true, text: 'minutos' } } }
+      }
+    })
+  }
 
   function filterByRepo(prs) {
     if (!state.selectedRepos.size) return []
@@ -366,7 +439,7 @@
     `
   }
 
-  function renderOpenPrsList(activePrs, fileCountMap = null) {
+  function renderOpenPrsList(activePrs, fileCountMap = null, buildsByPr = null) {
     const container = document.getElementById('open-prs-list')
     const now = new Date()
 
@@ -384,6 +457,8 @@
     const body = sorted.map(p => {
       const url = buildPrUrl(p)
       const fileCount = fileCountMap?.get(p.pullRequestId) ?? '—'
+      const prBuilds = buildsByPr?.get(p.pullRequestId)
+      const buildSummary = prBuilds ? prLastBuildSummary(prBuilds) : null
       return `
         <tr>
           <td>#${p.pullRequestId}</td>
@@ -392,13 +467,14 @@
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>
           <td>${fileCount}</td>
+          <td>${buildResultBadge(buildSummary)}</td>
           <td>${prStaleBadge(p.creationDate, now)}</td>
         </tr>`
     }).join('')
 
     container.innerHTML = `
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Arquivos</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Arquivos</th><th>Build</th><th>Status</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
@@ -473,10 +549,11 @@
     const status = document.getElementById('global-status')
     status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
     try {
-      const [active, completed, abandoned] = await Promise.all([
+      const [active, completed, abandoned, builds] = await Promise.all([
         listPullRequests({ status: 'active', top: 500 }),
         listPullRequests({ status: 'completed', top: 500 }),
         listPullRequests({ status: 'abandoned', top: 500 }),
+        loadPRBuilds({ startDate: state.startDate, endDate: state.endDate, repositoryIds: state.selectedRepos }),
       ])
 
       const activeByRepo = filterByRepo(active.filter(pr => !pr.isDraft))
@@ -492,16 +569,19 @@
 
       state.lastActivePrs = activeByRepo
       state.lastOpenPrFileCounts = new Map()
+      state.lastBuildsByPr = buildsByPrNumber(builds)
+
       renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles)
+      renderBuildCard(builds)
       renderTrendChart(completedFiltered)
       renderRepoPieChart(completedFiltered)
-      renderOpenPrsList(activeByRepo, null)
+      renderOpenPrsList(activeByRepo, null, state.lastBuildsByPr)
       renderReviewerRanking(allDateFiltered)
       renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, null)
 
       fetchFileCounts(activeByRepo.slice(0, 30), { maxPrs: 30 }).then(map => {
         state.lastOpenPrFileCounts = map
-        renderOpenPrsList(state.lastActivePrs, map)
+        renderOpenPrsList(state.lastActivePrs, map, state.lastBuildsByPr)
       })
 
       fetchFileCounts([...completedFiltered, ...abandonedFiltered], { maxPrs: 50 }).then(map => {

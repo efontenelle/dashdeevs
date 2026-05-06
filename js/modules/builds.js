@@ -1,20 +1,17 @@
 import { listBuilds } from '../api.js'
 
-export async function loadPRBuilds({ startDate, endDate, repositoryIds } = {}) {
+export async function loadPRBuilds({ startDate, endDate } = {}) {
   try {
     const builds = await listBuilds({ minTime: startDate, maxTime: endDate })
 
     const start = startDate ? new Date(startDate) : null
     const end = endDate ? new Date(endDate) : null
-    let filtered = builds.filter(b => {
+    return builds.filter(b => {
       const t = new Date(b.queueTime || b.startTime)
       if (start && t < start) return false
       if (end && t > end) return false
       return true
     })
-
-    if (!repositoryIds?.size) return filtered
-    return filtered.filter(b => repositoryIds.has(b.repository?.id))
   } catch (e) {
     console.warn('Falha ao carregar builds:', e.message)
     return []

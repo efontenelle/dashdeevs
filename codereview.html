@@ -549,16 +549,24 @@
     const status = document.getElementById('global-status')
     status.innerHTML = '<div class="alert info"><span class="spinner"></span> Carregando dados do Azure DevOps...</div>'
     try {
-      const [active, completed, abandoned, builds] = await Promise.all([
+      const [active, completed, abandoned, allBuilds] = await Promise.all([
         listPullRequests({ status: 'active', top: 500 }),
         listPullRequests({ status: 'completed', top: 500 }),
         listPullRequests({ status: 'abandoned', top: 500 }),
-        loadPRBuilds({ startDate: state.startDate, endDate: state.endDate, repositoryIds: state.selectedRepos }),
+        loadPRBuilds({ startDate: state.startDate, endDate: state.endDate }),
       ])
 
       const activeByRepo = filterByRepo(active.filter(pr => !pr.isDraft))
       const completedFiltered = filterByDate(filterByRepo(completed))
       const abandonedFiltered = filterByDate(filterByRepo(abandoned))
+
+      const monitoredPrIds = new Set(
+        [...activeByRepo, ...completedFiltered, ...abandonedFiltered].map(p => p.pullRequestId)
+      )
+      const builds = allBuilds.filter(b => {
+        const prNum = b.triggerInfo?.['pr.number']
+        return prNum != null && monitoredPrIds.has(parseInt(prNum, 10))
+      })
 
       const allDateFiltered = [...completedFiltered, ...abandonedFiltered]
       const [approval, firstReview, avgFiles] = await Promise.all([

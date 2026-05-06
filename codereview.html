@@ -117,7 +117,7 @@
   import { createChart, PALETTE } from './js/charts.js'
   import { clearCache } from './js/cache.js'
   import { listRepositories, listPullRequests } from './js/api.js'
-  import { avgApprovalTime, prAuthorRanking, avgFilesPerPr, fetchFileCounts, fetchPrChangeCounts, avgChangeCountsFromMap } from './js/modules/commits.js'
+  import { avgApprovalTime, prAuthorRanking, avgFilesPerPr, fetchFileCounts } from './js/modules/commits.js'
   import { avgTimeToFirstReview, reviewStatsByReviewer } from './js/modules/reviews.js'
   import { loadPRBuilds, buildMetrics, buildsByPrNumber, prLastBuildSummary, buildTrendByWeek, formatBuildDuration } from './js/modules/builds.js'
 
@@ -133,8 +133,6 @@
     allRepos: [],
     lastActivePrs: [],
     lastOpenPrFileCounts: new Map(),
-    lastClosedChangeCounts: new Map(),
-    lastActiveChangeCounts: new Map(),
     lastBuildsByPr: new Map(),
     showOnlyCritical: false,
   }
@@ -250,7 +248,7 @@
     document.getElementById('toggle-critical-btn').textContent = state.showOnlyCritical
       ? 'Mostrar todas as PRs'
       : 'Mostrar apenas PRs críticas (>3 dias)'
-    renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts, state.lastBuildsByPr, state.lastActiveChangeCounts)
+    renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts, state.lastBuildsByPr)
   })
 
   function bucketByWeek(prs, startDate, endDate) {
@@ -428,22 +426,20 @@
     })
   }
 
-  function renderKpis(completedCount, abandonedCount, avgApproval, avgFirstReview, avgFiles, avgChanges) {
+  function renderKpis(completedCount, abandonedCount, avgApproval, avgFirstReview, avgFiles) {
     const approvalDisplay = avgApproval != null ? avgApproval.toFixed(1) : '—'
     const firstReviewDisplay = avgFirstReview != null ? avgFirstReview.toFixed(1) : '—'
     const filesDisplay = avgFiles != null ? avgFiles.toFixed(1) : '—'
-    const changesDisplay = avgChanges != null ? avgChanges.toFixed(1) : '—'
     document.getElementById('kpi-row').innerHTML = `
       <div class="card stat"><div class="label">PRs concluídas no período</div><div class="value">${completedCount}</div></div>
       <div class="card stat"><div class="label">PRs abandonadas no período</div><div class="value">${abandonedCount}</div></div>
       <div class="card stat"><div class="label">Tempo médio de aprovação</div><div class="value">${approvalDisplay}<span style="font-size:14px"> horas</span></div></div>
       <div class="card stat"><div class="label">Tempo médio até 1ª revisão</div><div class="value">${firstReviewDisplay}<span style="font-size:14px"> horas</span></div></div>
       <div class="card stat"><div class="label">Arquivos alterados por PR (média)</div><div class="value">${filesDisplay}</div></div>
-      <div class="card stat" title="Soma de adições + edições + remoções de arquivos por commit, média entre PRs"><div class="label">Alterações de arquivos por PR (A+E+R)</div><div class="value">${changesDisplay}</div></div>
     `
   }
 
-  function renderOpenPrsList(activePrs, fileCountMap = null, buildsByPr = null, changeCountsMap = null) {
+  function renderOpenPrsList(activePrs, fileCountMap = null, buildsByPr = null) {
     const container = document.getElementById('open-prs-list')
     const now = new Date()
 
@@ -463,8 +459,6 @@
       const fileCount = fileCountMap?.get(p.pullRequestId) ?? '—'
       const prBuilds = buildsByPr?.get(p.pullRequestId)
       const buildSummary = prBuilds ? prLastBuildSummary(prBuilds) : null
-      const cc = changeCountsMap?.get(p.pullRequestId)
-      const changesSummary = cc ? `+${cc.add} / ~${cc.edit} / -${cc.delete}` : '—'
       return `
         <tr>
           <td>#${p.pullRequestId}</td>
@@ -473,7 +467,6 @@
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>
           <td>${fileCount}</td>
-          <td title="Adições / Edições / Remoções de arquivos">${changesSummary}</td>
           <td>${buildResultBadge(buildSummary)}</td>
           <td>${prStaleBadge(p.creationDate, now)}</td>
         </tr>`
@@ -481,13 +474,13 @@
 
     container.innerHTML = `
       <table>
-        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Arquivos</th><th>A / E / R</th><th>Build</th><th>Status</th></tr></thead>
+        <thead><tr><th>ID</th><th>Título</th><th>Repositório</th><th>Autor</th><th>Aberta há</th><th>Arquivos</th><th>Build</th><th>Status</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
   }
 
-  function renderAuthorRanking(completedPrs, abandonedPrs, activePrs, fileCountMap = null, changeCountsMap = null) {
+  function renderAuthorRanking(completedPrs, abandonedPrs, activePrs, fileCountMap = null) {
     const container = document.getElementById('author-ranking')
     const rows = prAuthorRanking(completedPrs, abandonedPrs, activePrs)
     if (!rows.length) {
@@ -506,26 +499,11 @@
       }
     }
 
-    const authorChangeCounts = new Map()
-    if (changeCountsMap) {
-      for (const pr of [...completedPrs, ...abandonedPrs]) {
-        const cc = changeCountsMap.get(pr.pullRequestId)
-        if (cc == null) continue
-        const author = pr.createdBy?.displayName || 'Desconhecido'
-        if (!authorChangeCounts.has(author)) authorChangeCounts.set(author, [])
-        authorChangeCounts.get(author).push(cc.total)
-      }
-    }
-
     const body = rows.map(r => {
       const avg = r.avgApprovalHours != null ? r.avgApprovalHours.toFixed(1) + ' h' : '—'
       const fileCounts = authorFileCounts.get(r.author)
       const avgFiles = fileCounts?.length
         ? (fileCounts.reduce((a, b) => a + b, 0) / fileCounts.length).toFixed(1)
-        : '—'
-      const changeTotals = authorChangeCounts.get(r.author)
-      const avgChanges = changeTotals?.length
-        ? (changeTotals.reduce((a, b) => a + b, 0) / changeTotals.length).toFixed(1)
         : '—'
       return `<tr>
         <td>${escapeHtml(r.author)}</td>
@@ -534,12 +512,11 @@
         <td>${r.abandoned}</td>
         <td>${avg}</td>
         <td>${avgFiles}</td>
-        <td>${avgChanges}</td>
       </tr>`
     }).join('')
     container.innerHTML = `
       <table>
-        <thead><tr><th>Autor</th><th>PRs concluídas</th><th>PRs abertas</th><th>PRs abandonadas</th><th>Tempo médio de aprovação</th><th>Média de arquivos</th><th title="Média de adições + edições + remoções de arquivos por PR">Média de alterações (A+E+R)</th></tr></thead>
+        <thead><tr><th>Autor</th><th>PRs concluídas</th><th>PRs abertas</th><th>PRs abandonadas</th><th>Tempo médio de aprovação</th><th>Média de arquivos</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
     `
@@ -600,37 +577,23 @@
 
       state.lastActivePrs = activeByRepo
       state.lastOpenPrFileCounts = new Map()
-      state.lastClosedChangeCounts = new Map()
-      state.lastActiveChangeCounts = new Map()
       state.lastBuildsByPr = buildsByPrNumber(builds)
 
-      renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles, null)
+      renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles)
       renderBuildCard(builds)
       renderTrendChart(completedFiltered)
       renderRepoPieChart(completedFiltered)
-      renderOpenPrsList(activeByRepo, null, state.lastBuildsByPr, null)
+      renderOpenPrsList(activeByRepo, null, state.lastBuildsByPr)
       renderReviewerRanking(allDateFiltered)
-      renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, null, null)
+      renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, null)
 
       fetchFileCounts(activeByRepo.slice(0, 30), { maxPrs: 30 }).then(map => {
         state.lastOpenPrFileCounts = map
-        renderOpenPrsList(state.lastActivePrs, map, state.lastBuildsByPr, state.lastActiveChangeCounts)
+        renderOpenPrsList(state.lastActivePrs, map, state.lastBuildsByPr)
       })
 
       fetchFileCounts([...completedFiltered, ...abandonedFiltered], { maxPrs: 50 }).then(map => {
-        renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, map, state.lastClosedChangeCounts)
-      })
-
-      fetchPrChangeCounts(allDateFiltered).then(ccMap => {
-        state.lastClosedChangeCounts = ccMap
-        const avgChanges = avgChangeCountsFromMap(ccMap)
-        renderKpis(completedFiltered.length, abandonedFiltered.length, approval, firstReview, avgFiles, avgChanges)
-        renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, state.lastOpenPrFileCounts, ccMap)
-      })
-
-      fetchPrChangeCounts(activeByRepo).then(ccMap => {
-        state.lastActiveChangeCounts = ccMap
-        renderOpenPrsList(state.lastActivePrs, state.lastOpenPrFileCounts, state.lastBuildsByPr, ccMap)
+        renderAuthorRanking(completedFiltered, abandonedFiltered, activeByRepo, map)
       })
 
       status.innerHTML = ''

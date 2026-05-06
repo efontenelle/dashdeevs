@@ -1,4 +1,4 @@
-import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet, getPullRequestIterations, getPullRequestIterationChanges } from '../api.js'
+import { listRepositories, listCommits, listPullRequests, getTeamMemberIdentifierSet, getPullRequestIterations, getPullRequestIterationChanges, getPullRequestCommits } from '../api.js'
 import { daysAgoIso, bucketByDay, groupBy, daysBetween } from '../ui.js'
 
 function norm(s) {
@@ -165,6 +165,34 @@ export function prAuthorRanking(completedPrs, abandonedPrs, activePrs) {
         : null,
     }))
     .sort((a, b) => b.completed - a.completed)
+}
+
+export async function fetchPrChangeCounts(prs) {
+  const map = new Map()
+  for (const pr of prs) {
+    if (!pr.repository?.id) continue
+    try {
+      const commits = await getPullRequestCommits(pr.repository.id, pr.pullRequestId)
+      const totals = { add: 0, edit: 0, delete: 0 }
+      for (const c of commits) {
+        const cc = c.changeCounts || {}
+        totals.add    += cc.Add    || 0
+        totals.edit   += cc.Edit   || 0
+        totals.delete += cc.Delete || 0
+      }
+      map.set(pr.pullRequestId, { ...totals, total: totals.add + totals.edit + totals.delete })
+    } catch (e) {
+      console.warn(`Falha ao buscar commits do PR ${pr.pullRequestId}:`, e.message)
+    }
+  }
+  return map
+}
+
+export function avgChangeCountsFromMap(map) {
+  if (!map.size) return null
+  let sum = 0
+  for (const v of map.values()) sum += v.total
+  return sum / map.size
 }
 
 export async function avgFilesPerPr(prs, { maxPrs = 50 } = {}) {

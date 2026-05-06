@@ -106,14 +106,6 @@ export async function getPullRequestIterationChanges(repoId, prId, iterationId) 
   return data.changeEntries || []
 }
 
-export async function getPullRequestCommits(repoId, prId) {
-  const data = await get(
-    `/_apis/git/repositories/${repoId}/pullRequests/${prId}/commits`,
-    { '$top': 200 }
-  )
-  return data.value || []
-}
-
 export async function listIterations(team) {
   const scope = team ? `/${encodeURIComponent(team)}` : ''
   const data = await get(`${scope}/_apis/work/teamsettings/iterations`)

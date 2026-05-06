@@ -74,7 +74,7 @@ export async function listCommits(repoId, { fromDate, toDate, author, top = 1000
   return data.value || []
 }
 
-export async function listPullRequests({ status = 'all', top = 500 } = {}) {
+export async function listPullRequests({ status = 'all', top = 2500 } = {}) {
   const params = {
     'searchCriteria.status': status,
     '$top': top,
@@ -200,7 +200,7 @@ export async function getWorkItemRevisions(id) {
   return data.value || []
 }
 
-export async function listBuilds({ minTime, maxTime, repositoryId, top = 500 } = {}) {
+export async function listBuilds({ minTime, maxTime, repositoryId, top = 2500 } = {}) {
   const params = { reasonFilter: 'pullRequest', '$top': top }
   if (minTime) params.minTime = minTime instanceof Date ? minTime.toISOString() : minTime
   if (maxTime) params.maxTime = maxTime instanceof Date ? maxTime.toISOString() : maxTime

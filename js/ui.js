@@ -35,18 +35,37 @@ function updateThemeButton(btn) {
 }
 
 export function renderTopbar(active) {
-  const html = `
-    <div class="brand">Developer Dashboard</div>
-    <nav>
-      <a href="dashboard.html" ${active === 'dashboard' ? 'class="active"' : ''}>Time</a>
-      <a href="developer.html" ${active === 'developer' ? 'class="active"' : ''}>Desenvolvedor</a>
-      <a href="codereview.html" ${active === 'codereview' ? 'class="active"' : ''}>Code Review</a>
-      <a href="config.html" ${active === 'config' ? 'class="active"' : ''}>Configuração</a>
-    </nav>
-    <button id="theme-toggle" class="theme-toggle">Modo escuro</button>
-  `
   const el = document.querySelector('header.topbar')
-  if (el) el.innerHTML = html
+  if (!el) { initTheme(); return }
+  while (el.firstChild) el.removeChild(el.firstChild)
+
+  const brand = document.createElement('div')
+  brand.className = 'brand'
+  brand.textContent = 'Developer Dashboard'
+
+  const nav = document.createElement('nav')
+  const links = [
+    ['dashboard.html', 'dashboard', 'Time'],
+    ['developer.html', 'developer', 'Desenvolvedor'],
+    ['codereview.html', 'codereview', 'Code Review'],
+    ['config.html', 'config', 'Configuração'],
+  ]
+  for (const [href, key, label] of links) {
+    const a = document.createElement('a')
+    a.href = href
+    a.textContent = label
+    if (active === key) a.classList.add('active')
+    nav.appendChild(a)
+  }
+
+  const btn = document.createElement('button')
+  btn.id = 'theme-toggle'
+  btn.className = 'theme-toggle'
+  btn.textContent = 'Modo escuro'
+
+  el.appendChild(brand)
+  el.appendChild(nav)
+  el.appendChild(btn)
   initTheme()
 }
 
@@ -131,10 +150,6 @@ export function bucketByDay(items, dateFn, days) {
   return buckets
 }
 
-export function getQueryParam(name) {
-  return new URLSearchParams(location.search).get(name)
-}
-
 export function formatOpenDuration(creationDate, now = new Date()) {
   const ms = now - new Date(creationDate)
   if (!Number.isFinite(ms) || ms < 0) return '—'
@@ -148,5 +163,6 @@ export function formatOpenDuration(creationDate, now = new Date()) {
 export function buildPrUrl(pr) {
   const { org, project } = getConfig()
   const repo = encodeURIComponent(pr.repository?.name || '')
-  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${repo}/pullrequest/${pr.pullRequestId}`
+  const prId = encodeURIComponent(String(pr.pullRequestId ?? ''))
+  return `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${repo}/pullrequest/${prId}`
 }

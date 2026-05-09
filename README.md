@@ -5,7 +5,7 @@ Dashboard web estático para acompanhar métricas de desenvolvedores consumindo 
 - Sem frameworks (HTML + CSS + JS puro, ES Modules nativos)
 - Sem bundler e sem etapa de build
 - Gráficos via [Chart.js](https://www.chartjs.org/) (CDN)
-- Autenticação via Personal Access Token salvo no `localStorage`
+- Autenticação via Personal Access Token salvo no `sessionStorage` (válido apenas pela aba atual)
 - Cache local de 15 minutos para evitar rate limiting
 
 ## Como rodar
@@ -53,7 +53,7 @@ Depois abra `http://localhost:8080/index.html` e navegue até `config.html` para
    - `Build (Read)` (opcional)
 4. Copie o token e cole em `config.html`.
 
-O PAT fica salvo apenas em `localStorage` no seu navegador. Ele nunca é enviado para outro servidor nem aparece em URLs/console.
+O PAT fica salvo apenas em `sessionStorage` no seu navegador (é apagado ao fechar a aba). Ele nunca é enviado para outro servidor nem aparece em URLs/console.
 
 ## Estrutura
 

@@ -26,19 +26,62 @@ const MIME = {
   '.map': 'application/json; charset=utf-8',
 }
 
-const HOP_BY_HOP = new Set([
-  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
-  'te', 'trailers', 'transfer-encoding', 'upgrade', 'host', 'origin', 'referer',
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'])
+
+const FORWARD_REQ_HEADERS = new Set([
+  'authorization', 'accept', 'accept-language', 'content-type',
+  'content-length', 'user-agent', 'if-none-match', 'if-modified-since',
 ])
 
-function proxyToAzdo(req, res) {
-  const targetPath = '/' + req.url.slice(AZDO_PREFIX.length)
+const STRIP_RES_HEADERS = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailers', 'transfer-encoding', 'upgrade',
+  'set-cookie', 'server', 'x-powered-by',
+])
 
-  const headers = {}
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (!HOP_BY_HOP.has(name.toLowerCase())) headers[name] = value
+const VALID_PROXY_PATH = /^\/[A-Za-z0-9._~!$&'()*+,;=:@/%-]*(\?[A-Za-z0-9._~!$&'()*+,;=:@/?%-]*)?$/
+
+const SECURITY_HEADERS = {
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self'",
+    "img-src 'self' data:",
+    "font-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
+  ].join('; '),
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'geolocation=(), microphone=(), camera=(), payment=()',
+}
+
+function applySecurityHeaders(res) {
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v)
+}
+
+function proxyToAzdo(req, res) {
+  if (!ALLOWED_METHODS.has(req.method)) {
+    res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': [...ALLOWED_METHODS].join(', ') })
+    res.end('Method Not Allowed')
+    return
   }
-  headers.host = AZDO_HOST
+
+  const targetPath = '/' + req.url.slice(AZDO_PREFIX.length)
+  if (!VALID_PROXY_PATH.test(targetPath)) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('Bad Request')
+    return
+  }
+
+  const headers = { host: AZDO_HOST }
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (FORWARD_REQ_HEADERS.has(name.toLowerCase())) headers[name] = value
+  }
 
   const upstream = https.request({
     hostname: AZDO_HOST,
@@ -49,8 +92,9 @@ function proxyToAzdo(req, res) {
   }, (ures) => {
     const outHeaders = {}
     for (const [name, value] of Object.entries(ures.headers)) {
-      if (!HOP_BY_HOP.has(name.toLowerCase())) outHeaders[name] = value
+      if (!STRIP_RES_HEADERS.has(name.toLowerCase())) outHeaders[name] = value
     }
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) outHeaders[k] = v
     res.writeHead(ures.statusCode || 502, outHeaders)
     ures.pipe(res)
   })
@@ -58,24 +102,43 @@ function proxyToAzdo(req, res) {
   upstream.on('error', (err) => {
     console.error(`[proxy] ${req.method} ${targetPath} -> ${err.message}`)
     if (!res.headersSent) {
+      applySecurityHeaders(res)
       res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
     }
-    res.end(`Upstream proxy error: ${err.message}`)
+    res.end('Upstream proxy error')
   })
 
   req.pipe(upstream)
 }
 
+const DENY_FILES = new Set([
+  'server.js', 'start.bat', 'start.sh', 'package.json', 'package-lock.json', '.gitignore', '.env',
+])
+
 function safeResolve(requested) {
-  const pathname = decodeURIComponent(requested.split('?')[0])
-  const normalized = path.posix.normalize(pathname)
-  if (normalized.includes('..')) return null
-  const full = path.join(ROOT, normalized)
-  if (!full.startsWith(ROOT)) return null
+  const pathname = requested.split('?')[0]
+  let decoded
+  try { decoded = decodeURIComponent(pathname) } catch { return null }
+  if (decoded.indexOf('\0') !== -1) return null
+  const full = path.resolve(ROOT, '.' + decoded)
+  const rel = path.relative(ROOT, full)
+  if (rel === '') return full
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null
+  const segments = rel.split(/[\\/]/)
+  if (segments.some(s => s.startsWith('.'))) return null
+  if (segments.length === 1 && DENY_FILES.has(segments[0].toLowerCase())) return null
   return full
 }
 
 function serveStatic(req, res) {
+  applySecurityHeaders(res)
+
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'text/plain; charset=utf-8', 'Allow': 'GET, HEAD' })
+    res.end('Method Not Allowed')
+    return
+  }
+
   let pathname = req.url.split('?')[0]
   if (pathname === '/') pathname = '/index.html'
 
@@ -89,15 +152,14 @@ function serveStatic(req, res) {
   fs.stat(full, (err, stat) => {
     if (err || !stat.isFile()) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end(`Not Found: ${pathname}`)
+      res.end('Not Found')
       return
     }
     const ext = path.extname(full).toLowerCase()
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Content-Length': stat.size,
-      'Cache-Control': 'no-cache',
-    })
+    res.setHeader('Content-Type', MIME[ext] || 'application/octet-stream')
+    res.setHeader('Content-Length', stat.size)
+    res.setHeader('Cache-Control', 'no-store')
+    res.writeHead(200)
     if (req.method === 'HEAD') { res.end(); return }
     fs.createReadStream(full).pipe(res)
   })

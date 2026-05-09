@@ -12,7 +12,7 @@
 <header class="topbar"></header>
 <main>
   <h1>Configuração</h1>
-  <p class="muted">Informe suas credenciais do Azure DevOps. Tudo é salvo localmente no seu navegador (<code>localStorage</code>) e nunca é enviado para outro servidor.</p>
+  <p class="muted">Informe suas credenciais do Azure DevOps. Org e projeto ficam em <code>localStorage</code>; o PAT fica em <code>sessionStorage</code> (apagado ao fechar a aba). Nada é enviado para outro servidor.</p>
 
   <div class="card" style="max-width: 640px;">
     <form id="config-form" autocomplete="off">
@@ -107,7 +107,8 @@
       const count = result.count ?? (result.value?.length ?? 0)
       showStatus('success', `Conexão OK. Organização respondeu com ${count} projeto(s) visível(is).`)
     } catch (e) {
-      showStatus('danger', `Falha: ${e.message}`)
+      console.debug('[config] testConnection failed:', e)
+      showStatus('danger', 'Falha na conexão. Verifique organização, projeto e PAT.')
     } finally {
       testBtn.disabled = false
     }

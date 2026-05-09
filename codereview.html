@@ -7,7 +7,11 @@
 <link rel="stylesheet" href="css/main.css">
 <link rel="stylesheet" href="css/components.css">
 <script src="js/file-guard.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.min.js"
+  integrity="sha384-XcdcwHqIPULERb2yDEM4R0XaQKU3YnDsrTmjACBZyfdVVqjh6xQ4/DCMd7XLcA6Y"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"></script>
 </head>
 <body>
 <header class="topbar"></header>
@@ -185,7 +189,7 @@
     container.innerHTML = repos.map(r => {
       const checked = state.selectedRepos.has(r.id) ? 'checked' : ''
       return `<label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
-        <input type="checkbox" data-repo-id="${r.id}" ${checked}> ${escapeHtml(r.name)}
+        <input type="checkbox" data-repo-id="${escapeHtml(r.id)}" ${checked}> ${escapeHtml(r.name)}
       </label>`
     }).join('')
 
@@ -462,7 +466,7 @@
       return `
         <tr>
           <td>#${p.pullRequestId}</td>
-          <td><a href="${url}" target="_blank" rel="noopener">${escapeHtml(p.title || '(sem título)')}</a></td>
+          <td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(p.title || '(sem título)')}</a></td>
           <td>${escapeHtml(p.repository?.name || '—')}</td>
           <td>${escapeHtml(p.createdBy?.displayName || '—')}</td>
           <td>${formatOpenDuration(p.creationDate, now)}</td>

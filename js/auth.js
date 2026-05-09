@@ -4,22 +4,24 @@ const KEYS = {
   project: 'azdo_project',
 }
 
+// PAT lives in sessionStorage so it does not persist across browser restarts.
+// Org/project stay in localStorage as they are not credentials.
 export function getConfig() {
   return {
-    pat: localStorage.getItem(KEYS.pat) ?? '',
+    pat: sessionStorage.getItem(KEYS.pat) ?? '',
     org: localStorage.getItem(KEYS.org) ?? '',
     project: localStorage.getItem(KEYS.project) ?? '',
   }
 }
 
 export function setConfig({ pat, org, project }) {
-  if (pat != null) localStorage.setItem(KEYS.pat, pat)
+  if (pat != null) sessionStorage.setItem(KEYS.pat, pat)
   if (org != null) localStorage.setItem(KEYS.org, org)
   if (project != null) localStorage.setItem(KEYS.project, project)
 }
 
 export function clearConfig() {
-  localStorage.removeItem(KEYS.pat)
+  sessionStorage.removeItem(KEYS.pat)
   localStorage.removeItem(KEYS.org)
   localStorage.removeItem(KEYS.project)
 }
@@ -30,7 +32,7 @@ export function hasConfig() {
 }
 
 export function getAuthHeader() {
-  const pat = localStorage.getItem(KEYS.pat) ?? ''
+  const pat = sessionStorage.getItem(KEYS.pat) ?? ''
   const token = btoa(':' + pat)
   return { 'Authorization': 'Basic ' + token }
 }

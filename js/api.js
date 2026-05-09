@@ -23,9 +23,11 @@ async function request(url, { method = 'GET', body } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   })
   if (!res.ok) {
-    let detail = ''
-    try { detail = (await res.text()).slice(0, 200) } catch {}
-    throw new Error(`Azure DevOps API ${res.status}: ${res.statusText}${detail ? ` — ${detail}` : ''}`)
+    try {
+      const detail = (await res.text()).slice(0, 500)
+      if (detail) console.debug('[azdo]', res.status, res.statusText, detail)
+    } catch {}
+    throw new Error(`Azure DevOps API ${res.status}: ${res.statusText}`)
   }
   return res.json()
 }
